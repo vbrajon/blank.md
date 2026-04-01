@@ -4,6 +4,15 @@ const app = window.blank
 // Remote pointer container
 document.body.insertAdjacentHTML("beforeend", '<div id="remote-pointers"></div>')
 
+// Cursor overlay
+const editorBody = document.querySelector("#editor > div:first-child")
+if (editorBody) {
+  const overlay = document.createElement("div")
+  overlay.id = "cursor-overlay"
+  overlay.className = "absolute inset-0 pointer-events-none z-[2] overflow-hidden"
+  editorBody.appendChild(overlay)
+}
+
 let ydoc,
   ytext,
   awareness,
@@ -26,10 +35,10 @@ function getCaretCoords(el, pos) {
 
 function renderRemoteCursors() {
   const overlay = document.getElementById("cursor-overlay")
-  const editorOverlay = document.getElementById("editor")
+  const editorEl = document.getElementById("editor")
   const textarea = document.getElementById("ta")
   if (!overlay || !awareness || !textarea) return
-  if (editorOverlay?.classList.contains("hidden")) {
+  if (editorEl?.style.display === "none") {
     overlay.innerHTML = ""
     return
   }
@@ -42,7 +51,7 @@ function renderRemoteCursors() {
     const pos = Math.min(s.cursor.head, textarea.value.length)
     const coords = getCaretCoords(textarea, pos)
     const top = coords.top - textarea.scrollTop
-    html += '<div class="remote-cursor" style="left:' + coords.left + "px;top:" + top + "px;height:" + coords.height + "px;background:" + color + '">' + '<div class="remote-cursor-label" style="background:' + color + '">' + app.esc(name) + "</div></div>"
+    html += '<div class="absolute w-0.5 pointer-events-none rounded-sm" style="left:' + coords.left + "px;top:" + top + "px;height:" + coords.height + "px;background:" + color + '">' + '<div class="absolute -top-[18px] -left-px text-white text-[10px] py-px px-1.5 rounded-t rounded-tr whitespace-nowrap font-mono font-semibold leading-[14px]" style="background:' + color + '">' + app.esc(name) + "</div></div>"
   }
   overlay.innerHTML = html
 }
@@ -57,7 +66,7 @@ function renderRemotePointers() {
     if (id === localId || !s.user || !s.pointer) continue
     const { name, color } = s.user
     const { x, y } = s.pointer
-    html += '<div class="remote-pointer" style="left:' + x + "px;top:" + y + 'px">' + '<svg viewBox="0 0 16 20"><path d="M0 0 L0 16 L4.5 12 L8.5 19.5 L11 18.5 L7 11 L12 11 Z" fill="' + color + '" stroke="#fff" stroke-width="1"/></svg>' + '<div class="remote-pointer-label" style="background:' + color + '">' + app.esc(name) + "</div></div>"
+    html += '<div class="fixed pointer-events-none z-[9999] transition-[left,top] duration-75 ease-linear" style="left:' + x + "px;top:" + y + 'px">' + '<svg class="w-4 h-5 drop-shadow-md" viewBox="0 0 16 20"><path d="M0 0 L0 16 L4.5 12 L8.5 19.5 L11 18.5 L7 11 L12 11 Z" fill="' + color + '" stroke="#fff" stroke-width="1"/></svg>' + '<div class="absolute top-4 left-2.5 text-white text-[10px] py-px px-1.5 rounded whitespace-nowrap font-mono font-semibold leading-[14px] opacity-90" style="background:' + color + '">' + app.esc(name) + "</div></div>"
   }
   container.innerHTML = html
 }
@@ -69,9 +78,9 @@ function renderCollabUsers() {
   let html = ""
   for (const [, s] of states) {
     if (!s.user) continue
-    html += '<span class="collab-dot" style="background:' + s.user.color + '" title="' + app.esc(s.user.name) + '"></span>'
+    html += '<span class="w-2 h-2 rounded-full border border-white/30 shrink-0" style="background:' + s.user.color + '" title="' + app.esc(s.user.name) + '"></span>'
   }
-  if (states.size > 1) html += '<span class="collab-count">' + states.size + "</span>"
+  if (states.size > 1) html += '<span class="font-mono text-[11px] text-gray-500 ml-0.5">' + states.size + "</span>"
   container.innerHTML = html
 }
 
@@ -181,8 +190,8 @@ try {
     knownValue = newVal
     app.updateHighlight?.()
     localStorage.setItem("slidev-md", newVal)
-    const editorOverlay = document.getElementById("editor")
-    if (!editorOverlay || editorOverlay.classList.contains("hidden")) app.refreshDeck?.()
+    const editorEl = document.getElementById("editor")
+    if (!editorEl || editorEl.style.display === "none") app.refreshDeck?.()
     renderRemoteCursors()
   })
 

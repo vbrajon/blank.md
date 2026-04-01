@@ -4,17 +4,36 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>blank.md</title>
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            fontFamily: {
+              mono: ['"Berkeley Mono"', "Monaco", '"Courier New"', "monospace"],
+            },
+          },
+        },
+      }
+    </script>
+    <script>
+      const t = localStorage.getItem("theme")
+      if (t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches)) document.documentElement.classList.add("dark")
+    </script>
+    <style>
+      @font-face {
+        font-family: "Berkeley Mono";
+        src: url("fonts/BerkeleyMonoVariable.woff2") format("woff2");
+        font-style: normal;
+        font-display: swap;
+      }
+    </style>
   </head>
-  <body>
-    <link rel="stylesheet" href="1-editor.css" />
+  <body class="h-screen overflow-hidden font-mono text-xs text-[#393a34] bg-white dark:text-[#ddd] dark:bg-[#151516]">
     <script type="module" src="1-editor.js"></script>
-
-    <!-- <link rel="stylesheet" href="2-preview.css" />
     <script type="module" src="2-preview.js"></script>
-
-    <link rel="stylesheet" href="3-collaboration.css" />
     <script type="module" src="3-collaboration.js"></script>
-
-    <script type="module" src="4-version.js"></script> -->
+    <script type="module" src="4-version.js"></script>
   </body>
 </html>
