@@ -1,0 +1,73 @@
+/* ===== COLLABORATION ===== */
+.cursor-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  overflow: hidden;
+}
+.remote-cursor {
+  position: absolute;
+  width: 2px;
+  pointer-events: none;
+  border-radius: 1px;
+}
+.remote-cursor-label {
+  position: absolute;
+  top: -18px;
+  left: -1px;
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px 3px 3px 0;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  line-height: 14px;
+}
+.collab-users {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+}
+.collab-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+}
+.collab-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #858585;
+  margin-left: 2px;
+}
+.remote-pointer {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  transition:
+    left 0.08s linear,
+    top 0.08s linear;
+}
+.remote-pointer svg {
+  width: 16px;
+  height: 20px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+}
+.remote-pointer-label {
+  position: absolute;
+  top: 16px;
+  left: 10px;
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  line-height: 14px;
+  opacity: 0.9;
+}

@@ -30,10 +30,17 @@ Les Outils · Les Notions · La Démo · Les Idées
 
 ```bash
 # Open a browser with remote debugging enabled
-agent-browser open about:blank --headed --args "--remote-debugging-port=9222,--start-maximized"
+npm install -g agent-browser
+agent-browser install
+agent-browser open example.com
+agent-browser dashboard install
+agent-browser dashboard start
+open http://localhost:4848/
 
 # Connect to existing Brave Browser
-osascript -e 'tell application "Brave Browser" to open location "brave://inspect/#remote-debugging"' && agent-browser --auto-connect open about:blank
+osascript -e 'tell application "Brave Browser" to open location "brave://inspect/#remote-debugging"'
+agent-browser open localhost
+# Then accept remote debugging popup
 ```
 
 3. v0 / cloud agents / pi
