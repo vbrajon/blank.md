@@ -17,7 +17,8 @@ let ydoc,
   ytext,
   awareness,
   knownValue = "",
-  collabReady = false
+  collabReady = false,
+  followingId = null
 
 function getCaretCoords(el, pos) {
   const div = document.createElement("div")
@@ -61,11 +62,15 @@ function renderRemotePointers() {
   if (!container || !awareness) return
   const states = awareness.getStates()
   const localId = awareness.clientID
+  const wW = window.innerWidth,
+    wH = window.innerHeight
   let html = ""
   for (const [id, s] of states) {
     if (id === localId || !s.user || !s.pointer) continue
     const { name, color } = s.user
-    const { x, y } = s.pointer
+    const { rx, ry } = s.pointer
+    const x = rx * wW,
+      y = ry * wH
     html += '<div class="fixed pointer-events-none z-[9999] transition-[left,top] duration-75 ease-linear" style="left:' + x + "px;top:" + y + 'px">' + '<svg class="w-4 h-5 drop-shadow-md" viewBox="0 0 16 20"><path d="M0 0 L0 16 L4.5 12 L8.5 19.5 L11 18.5 L7 11 L12 11 Z" fill="' + color + '" stroke="#fff" stroke-width="1"/></svg>' + '<div class="absolute top-4 left-2.5 text-white text-[10px] py-px px-1.5 rounded whitespace-nowrap font-mono font-semibold leading-[14px] opacity-90" style="background:' + color + '">' + app.esc(name) + "</div></div>"
   }
   container.innerHTML = html
@@ -75,10 +80,13 @@ function renderCollabUsers() {
   const container = document.getElementById("collab-users")
   if (!container || !awareness) return
   const states = awareness.getStates()
+  const localId = awareness.clientID
   let html = ""
-  for (const [, s] of states) {
+  for (const [id, s] of states) {
     if (!s.user) continue
-    html += '<span class="w-2 h-2 rounded-full border border-white/30 shrink-0" style="background:' + s.user.color + '" title="' + app.esc(s.user.name) + '"></span>'
+    const isMe = id === localId
+    const isFollowed = followingId === id
+    html += '<span class="w-2.5 h-2.5 rounded-full border-2 shrink-0 cursor-pointer' + (isFollowed ? " ring-2 ring-offset-1" : "") + '" style="background:' + s.user.color + ";border-color:" + s.user.color + (isFollowed ? ";--tw-ring-color:" + s.user.color : "") + '" title="' + app.esc(s.user.name) + (isMe ? " (you)" : "") + '" data-collab-id="' + id + '"></span>'
   }
   if (states.size > 1) html += '<span class="font-mono text-[11px] text-gray-500 ml-0.5">' + states.size + "</span>"
   container.innerHTML = html
@@ -105,21 +113,23 @@ function syncToYText(value) {
 // ===== SETUP =====
 try {
   const Y = await import("https://esm.sh/yjs@13")
-  const { WebrtcProvider } = await import("https://esm.sh/y-webrtc@10")
+  const { default: YPartyKitProvider } = await import("https://esm.sh/y-partykit@0/provider?deps=yjs@13")
 
   ydoc = new Y.Doc()
   ytext = ydoc.getText("markdown")
 
+  const host = "blank-md.vbrajon.partykit.dev"
   const roomName = "blank-md-" + location.host + location.pathname.replace(/[^a-z0-9]/gi, "-")
-  const provider = new WebrtcProvider(roomName, ydoc, { signaling: ["wss://signaling.yjs.dev"] })
+  const provider = new YPartyKitProvider(host, roomName, ydoc)
   awareness = provider.awareness
 
-  const colors = ["#e85d2a", "#3d7a2a", "#1e5a8f", "#a16207", "#9333ea", "#dc2626", "#0891b2", "#c026d3"]
-  const names = ["Fox", "Bear", "Owl", "Wolf", "Deer", "Hawk", "Lynx", "Crow", "Elk", "Jay"]
-  awareness.setLocalStateField("user", {
-    name: names[Math.floor(Math.random() * names.length)],
-    color: colors[Math.floor(Math.random() * colors.length)],
-  })
+  const colors = ["#fd0", "#f6e", "#f34", "#fa3", "#7d0", "#39f", "#3df"]
+  const names = ["Yellow", "Pink", "Red", "Orange", "Green", "Blue", "Cyan"]
+  const saved = JSON.parse(localStorage.getItem("collab-user") || "null")
+  const userName = saved?.name || names[names.length - 1]
+  const userColor = saved?.color || colors[colors.length - 1]
+  awareness.setLocalStateField("user", { name: userName, color: userColor })
+  localStorage.setItem("collab-user", JSON.stringify({ name: userName, color: userColor }))
 
   const localContent = app.content || ""
   knownValue = localContent
@@ -190,8 +200,7 @@ try {
     knownValue = newVal
     app.updateHighlight?.()
     localStorage.setItem("slidev-md", newVal)
-    const editorEl = document.getElementById("editor")
-    if (!editorEl || editorEl.style.display === "none") app.refreshDeck?.()
+    app.refreshDeck?.()
     renderRemoteCursors()
   })
 
@@ -222,17 +231,93 @@ try {
     textarea.addEventListener("scroll", renderRemoteCursors)
   }
 
-  // Mouse pointer tracking
-  document.addEventListener("mousemove", (e) => awareness.setLocalStateField("pointer", { x: e.clientX, y: e.clientY }))
+  // Mouse pointer tracking — send as ratio of window size
+  document.addEventListener("mousemove", (e) => awareness.setLocalStateField("pointer", { rx: e.clientX / window.innerWidth, ry: e.clientY / window.innerHeight }))
   document.addEventListener("mouseleave", () => awareness.setLocalStateField("pointer", null))
+
+  // ===== FOLLOW MODE =====
+  let applyingFollow = false
+  const origUpdateHash = app.updateHash
+  app.updateHash = function () {
+    origUpdateHash()
+    if (!followingId && !applyingFollow) awareness.setLocalStateField("view", { hash: location.hash })
+  }
+  awareness.setLocalStateField("view", { hash: location.hash })
 
   awareness.on("change", () => {
     renderRemoteCursors()
     renderRemotePointers()
     renderCollabUsers()
+    if (!followingId) return
+    const s = awareness.getStates().get(followingId)
+    if (!s?.view?.hash) return
+    const remote = s.view.hash.replace(/^#/, "")
+    if (remote === location.hash.replace(/^#/, "")) return
+    applyingFollow = true
+    location.hash = remote
+    applyingFollow = false
   })
 
-  provider.on("synced", () => setTimeout(initContent, 200))
+  // Click handler on collab user dots
+  document.getElementById("collab-users").addEventListener("click", (e) => {
+    const dot = e.target.closest("[data-collab-id]")
+    if (!dot) return
+    const id = Number(dot.dataset.collabId)
+    if (id === awareness.clientID) {
+      showUserEditor()
+    } else {
+      followingId = followingId === id ? null : id
+      if (followingId) {
+        const s = awareness.getStates().get(followingId)
+        if (s?.view?.hash) location.hash = s.view.hash.replace(/^#/, "")
+      }
+      renderCollabUsers()
+    }
+  })
+
+  // Name + color editor popup
+  function showUserEditor() {
+    let popup = document.getElementById("collab-editor")
+    if (popup) {
+      popup.remove()
+      return
+    }
+    const state = awareness.getLocalState()
+    const { name, color } = state.user
+    popup = document.createElement("div")
+    popup.id = "collab-editor"
+    popup.className = "fixed z-[400] bg-white dark:bg-[#222] border border-gray-200 dark:border-white/10 rounded-lg shadow-lg p-3 flex flex-col gap-2"
+    popup.style.cssText = "top:44px;left:60px"
+    popup.innerHTML = '<div class="flex items-center gap-2">' + '<input id="collab-name" class="font-mono text-xs bg-transparent border border-gray-200 dark:border-white/10 rounded px-2 py-1 outline-none w-24" value="' + app.esc(name) + '" maxlength="12" />' + '<input id="collab-color" type="color" class="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent" value="' + color + '" />' + "</div>"
+    document.body.appendChild(popup)
+    const nameInput = document.getElementById("collab-name")
+    const colorInput = document.getElementById("collab-color")
+    function save() {
+      const n = nameInput.value.trim().slice(0, 12) || name
+      const c = colorInput.value
+      awareness.setLocalStateField("user", { name: n, color: c })
+      localStorage.setItem("collab-user", JSON.stringify({ name: n, color: c }))
+      renderCollabUsers()
+    }
+    nameInput.addEventListener("input", save)
+    colorInput.addEventListener("input", save)
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") popup.remove()
+    })
+    // Close on outside click
+    setTimeout(() => {
+      document.addEventListener("click", function close(e) {
+        if (!popup.contains(e.target) && !e.target.closest("[data-collab-id]")) {
+          popup.remove()
+          document.removeEventListener("click", close)
+        }
+      })
+    })
+    nameInput.focus()
+    nameInput.select()
+  }
+
+  provider.on("sync", () => setTimeout(initContent, 200))
   setTimeout(initContent, 1000)
   renderCollabUsers()
   console.log("[collab] Room:", roomName)

@@ -21,6 +21,9 @@ marked.use({
       }
       return html + "</tbody></table>"
     },
+    link({ href, text }) {
+      return '<a href="' + href + '" target="_blank" rel="noopener">' + text + "</a>"
+    },
   },
 })
 app.marked = marked
@@ -37,162 +40,103 @@ function renderDoc(content) {
 }
 
 // ===== SLIDE PARSING =====
-function parseYAML(text) {
-  const obj = {}
-  for (const line of text.split("\n")) {
-    const idx = line.indexOf(":")
-    if (idx > 0) obj[line.slice(0, idx).trim()] = line.slice(idx + 1).trim()
-  }
-  return obj
-}
-
-function splitSlides(text) {
-  const lines = text.split("\n")
-  const sections = [[]]
-  let inCode = false
-  for (const line of lines) {
-    if (line.trimStart().startsWith("```")) inCode = !inCode
-    if (!inCode && /^\s*---\s*$/.test(line)) sections.push([])
-    else sections[sections.length - 1].push(line)
-  }
-  return sections.map((s) => s.join("\n").trim()).filter(Boolean)
-}
-
-function parseSlidesAuto(text) {
+function parseSlides(text) {
+  text = text.trim()
   const lines = text.split("\n")
   const slides = []
-  let current = null
+  let buf = []
   let inCode = false
 
-  function flush() {
-    if (current && current.lines.length) {
-      current.content = current.lines.join("\n").trim()
-      delete current.lines
-      if (current.content) slides.push(current)
-    }
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
+  for (const line of lines) {
     if (line.trimStart().startsWith("```")) inCode = !inCode
-    if (inCode) {
-      if (current) current.lines.push(line)
-      continue
+    if (!inCode && /^(#{1,6} |\d+\.\s)/.test(line) && buf.length) {
+      const content = buf.join("\n").trim()
+      if (content) slides.push({ content })
+      buf = []
     }
-
-    if (/^# /.test(line)) {
-      flush()
-      current = { layout: "cover", lines: [line] }
-      while (i + 1 < lines.length && !/^#{1,2} /.test(lines[i + 1]) && !/^\d+\.\s/.test(lines[i + 1])) {
-        i++
-        if (lines[i].trimStart().startsWith("```")) inCode = !inCode
-        current.lines.push(lines[i])
-      }
-      continue
-    }
-
-    if (/^## /.test(line)) {
-      flush()
-      current = { layout: "section", lines: [line] }
-      while (i + 1 < lines.length) {
-        const next = lines[i + 1]
-        if (/^#{1,2} /.test(next) || /^\d+\.\s/.test(next) || /^- /.test(next) || /^```/.test(next) || /^\|/.test(next)) break
-        if (next.trim() === "" && i + 2 < lines.length && (/^#{1,2} /.test(lines[i + 2]) || /^\d+\.\s/.test(lines[i + 2]) || /^- /.test(lines[i + 2]) || /^```/.test(lines[i + 2]))) break
-        i++
-        current.lines.push(lines[i])
-      }
-      continue
-    }
-
-    if (/^\d+\.\s/.test(line)) {
-      flush()
-      current = { layout: "default", lines: [line.replace(/^\d+\.\s+/, "### ")] }
-      continue
-    }
-
-    if (!current) current = { layout: "default", lines: [] }
-    current.lines.push(line)
+    buf.push(line)
   }
-  flush()
+  const last = buf.join("\n").trim()
+  if (last) slides.push({ content: last })
 
-  if (slides.length > 0 && slides[slides.length - 1].layout === "cover") {
-    slides[slides.length - 1].layout = "end"
+  for (let i = 0; i < slides.length; i++) {
+    slides[i].content = promoteNumberedTitle(slides[i].content)
+    slides[i].layout = detectLayout(slides[i].content, i, slides.length)
   }
   return slides
 }
 
-function parseSlides(text) {
-  text = text.trim()
-  let hasSeparators = false,
-    inCode = false
-  for (const line of text.split("\n")) {
+function promoteNumberedTitle(content) {
+  return content.replace(/^(\d+\.)\s+(.*)/, (_, num, rest) => "### " + num + " " + rest)
+}
+
+function detectLayout(content, index, total) {
+  if (index === 0) return "cover"
+  if (index === total - 1) return "end"
+  if (isTwoCols(content)) return "two-cols"
+  return "default"
+}
+
+function isBlock(line) {
+  return /^[-*+] |^\d+\.\s|^\||^```|^>/.test(line)
+}
+
+function splitBodyBlocks(body) {
+  const lines = body.split("\n")
+  const blocks = []
+  let cur = []
+  let inCode = false
+  for (const line of lines) {
     if (line.trimStart().startsWith("```")) inCode = !inCode
-    if (!inCode && /^\s*---\s*$/.test(line)) {
-      hasSeparators = true
-      break
+    if (!inCode && !line.trim() && cur.length) {
+      // Check if next non-empty line starts a new block type
+      blocks.push(cur.join("\n"))
+      cur = []
+    } else {
+      cur.push(line)
     }
   }
-  if (hasSeparators) {
-    const sections = splitSlides(text)
-    const result = []
-    let i = 0
-    while (i < sections.length) {
-      const section = sections[i]
-      const sectionLines = section
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean)
-      const isFM = sectionLines.length > 0 && sectionLines.every((l) => /^[a-zA-Z_][\w-]*\s*:/.test(l))
-      if (isFM && i + 1 < sections.length) {
-        const fm = parseYAML(section)
-        i++
-        result.push({ ...fm, content: sections[i] })
-      } else {
-        result.push({ content: section })
-      }
-      i++
-    }
-    return result
+  if (cur.length) blocks.push(cur.join("\n"))
+  return blocks.filter((b) => b.trim())
+}
+
+function isTwoCols(content) {
+  const lines = content.split("\n")
+  let start = 0
+  if (/^#{1,6} /.test(lines[0])) start = 1
+  while (start < lines.length && !lines[start].trim()) start++
+  const body = lines.slice(start).join("\n")
+  const blocks = splitBodyBlocks(body)
+  return blocks.length === 2
+}
+
+function splitTwoCols(content) {
+  const lines = content.split("\n")
+  let headEnd = 0
+  if (/^#{1,6} /.test(lines[0])) {
+    headEnd = 1
+    while (headEnd < lines.length && !lines[headEnd].trim()) headEnd++
   }
-  return parseSlidesAuto(text)
+  const heading = lines.slice(0, headEnd).join("\n")
+  const blocks = splitBodyBlocks(lines.slice(headEnd).join("\n"))
+  return { heading, left: blocks[0] || "", right: blocks[1] || "" }
 }
 
 // ===== SLIDE RENDERER =====
-const slideBase = "h-dvh snap-start overflow-hidden relative flex flex-col justify-center transition-all duration-100 ease-out"
-const slideLayouts = {
-  cover: slideBase + " items-center text-center",
-  section: slideBase + " px-[clamp(40px,8vw,120px)] py-[clamp(40px,6vh,80px)]",
-  default: slideBase + " px-[clamp(40px,8vw,120px)] pt-[clamp(36px,6vh,72px)] justify-start",
-  center: slideBase + " items-center text-center px-[clamp(40px,8vw,120px)] py-[clamp(40px,6vh,80px)]",
-  "two-cols": slideBase + " px-[clamp(40px,8vw,120px)] py-[clamp(40px,6vh,80px)]",
-  quote: slideBase + " items-center text-center p-16",
-  end: slideBase + " justify-end p-0 bg-gradient-to-br from-gray-800 to-gray-950 text-white",
-}
+const slideBase = "h-[100cqh] snap-start overflow-hidden relative flex flex-col justify-center transition-all duration-100 ease-out"
+const pad = "px-[clamp(40px,8cqw,120px)] py-[clamp(40px,6cqh,80px)]"
 
 function renderSlide(slide) {
   const layout = slide.layout || "default"
   const content = slide.content || ""
-  const cls = slideLayouts[layout] || slideLayouts.default
 
+  if (layout === "cover") return '<section class="slide ' + slideBase + ' items-center text-center">' + md(content) + "</section>"
+  if (layout === "end") return '<section class="slide ' + slideBase + ' items-center text-center">' + md(content) + "</section>"
   if (layout === "two-cols") {
-    const beforeCols = content.match(/^([\s\S]*?)(?=::(?:left|right)::)/)?.[1]?.trim() || ""
-    const left = content.match(/::left::([\s\S]*?)(?=::right::|$)/)?.[1]?.trim() || ""
-    const right = content.match(/::right::([\s\S]*?)(?=::left::|$)/)?.[1]?.trim() || ""
-    return '<section class="slide ' + cls + '">' + (beforeCols ? md(beforeCols) : "") + '<div class="grid grid-cols-2 gap-8 items-center flex-1"><div class="min-w-0">' + md(left) + '</div><div class="min-w-0">' + md(right) + "</div></div></section>"
+    const { heading, left, right } = splitTwoCols(content)
+    return '<section class="slide ' + slideBase + " " + pad + '">' + (heading ? md(heading) : "") + '<div class="grid grid-cols-2 gap-8 items-start flex-1"><div class="min-w-0">' + md(left) + '</div><div class="min-w-0">' + md(right) + "</div></div></section>"
   }
-  if (layout === "quote") {
-    const bqMatch = content.match(/>\s*(.+)/s)
-    const citeLines = content.split("\n").filter((l) => /^[—–\u2014-]\s/.test(l.trim()) && !l.startsWith(">"))
-    let html = '<section class="slide ' + cls + '"><div class="text-[clamp(80px,14vw,160px)] leading-[0.5] opacity-5 font-serif mb-[-16px]">\u201C</div>'
-    if (bqMatch) html += '<blockquote class="text-[clamp(22px,3.5vw,40px)] leading-relaxed italic border-none p-0 m-0 bg-transparent">' + marked.parseInline(bqMatch[1].trim()) + "</blockquote>"
-    for (const cl of citeLines) {
-      const cm = cl.trim().match(/^[—–\u2014-]\s*(.+)/)
-      if (cm) html += '<cite class="font-mono text-xs tracking-widest uppercase text-gray-500 dark:text-gray-400 mt-6 block not-italic">\u2014 ' + marked.parseInline(cm[1]) + "</cite>"
-    }
-    return html + "</section>"
-  }
-  if (layout === "end") return '<section class="slide ' + cls + '"><div class="p-12 px-16 relative z-10">' + md(content) + "</div></section>"
-  return '<section class="slide ' + cls + '">' + md(content) + "</section>"
+  return '<section class="slide ' + slideBase + " " + pad + ' justify-start pt-[clamp(36px,6cqh,72px)]">' + md(content) + "</section>"
 }
 
 // ===== DOM =====
@@ -225,8 +169,23 @@ function setDeckMode() {
   progress.style.display = "none"
   dotsEl.style.display = "none"
   counter.style.display = "none"
-  if (app.slide) {
-    deck.className = "h-dvh overflow-y-auto snap-y snap-mandatory"
+  if (app.text && app.slide) {
+    // Simulate iPhone 15 viewport (393×852 logical pixels)
+    const PW = 393,
+      PH = 852
+    const availW = window.innerWidth * 0.5
+    const availH = window.innerHeight - 40
+    const gap = 32
+    const scale = Math.min((availW - gap) / PW, (availH - gap) / PH)
+    const left = window.innerWidth * 0.5 + (availW - PW * scale) / 2
+    const top = 40 + (availH - PH * scale) / 2
+    deck.className = "snap-y snap-mandatory bg-white dark:bg-[#151516]"
+    deck.style.cssText = `position:fixed;top:${top}px;left:${left}px;width:${PW}px;height:${PH}px;transform:scale(${scale});transform-origin:top left;border:1px solid rgba(128,128,128,0.25);container-type:size;overflow-x:hidden;overflow-y:auto;`
+    progress.style.display = ""
+    counter.style.display = ""
+  } else if (app.slide) {
+    deck.className = "overflow-y-auto snap-y snap-mandatory"
+    deck.style.cssText = "width:100%;height:100dvh;container-type:size;"
     progress.style.display = ""
     dotsEl.style.display = ""
     counter.style.display = ""
@@ -234,7 +193,9 @@ function setDeckMode() {
     deck.className = "overflow-y-auto"
     deck.style.cssText = "position:fixed;top:40px;left:50%;right:0;bottom:0;padding:2rem"
   } else if (app.doc) {
-    deck.className = "max-w-3xl mx-auto px-8 pt-14 pb-16"
+    deck.className = "overflow-y-auto"
+    deck.style.cssText = "position:fixed;top:40px;left:0;right:0;bottom:0"
+    deck.querySelector("article")?.classList.add("max-w-3xl", "mx-auto", "px-8", "pb-16")
   } else {
     deck.style.display = "none"
   }
@@ -245,9 +206,12 @@ function buildDeck() {
     slides = parseSlides(app.content || "")
     deck.innerHTML = slides.map(renderSlide).join("")
     observeSlides()
-  } else {
+  } else if (previewMode === "doc") {
     slides = []
     deck.innerHTML = renderDoc(app.content || "")
+  } else {
+    slides = []
+    deck.innerHTML = ""
   }
   setDeckMode()
   app.emit("render")
@@ -298,25 +262,18 @@ function updateChrome() {
     d.style.background = i === current ? "#ec4899" : ""
   })
   counter.textContent = current + 1 + " / " + slides.length
-  history.replaceState(null, "", "#" + (current + 1))
+  app.slideIndex = current
+  app.updateHash()
+  app.emit("slidechange", { index: current })
 }
 
 function goTo(i) {
   const els = deck.querySelectorAll(".slide")
   const target = els[Math.max(0, Math.min(i, els.length - 1))]
   if (!target) return
-  const start = deck.scrollTop,
-    end = target.offsetTop,
-    dist = end - start
-  let t0 = null
   deck.style.scrollSnapType = "none"
-  requestAnimationFrame(function step(ts) {
-    if (!t0) t0 = ts
-    const p = Math.min((ts - t0) / 200, 1)
-    deck.scrollTop = start + dist * (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2)
-    if (p < 1) requestAnimationFrame(step)
-    else deck.style.scrollSnapType = ""
-  })
+  target.scrollIntoView({ behavior: "instant" })
+  deck.style.scrollSnapType = ""
 }
 
 function next() {
@@ -343,39 +300,16 @@ app.refreshDeck = () => {
 app.goTo = goTo
 
 // ===== EVENTS =====
-let navLock = false
 document.addEventListener("keydown", (e) => {
-  if (app.text && !app.slide) {
-    if (e.key === "Escape") app.toggleText()
-    return
-  }
-  if (app.doc && !app.text && !app.slide) {
-    if (e.key === "e") app.toggleText()
-    return
-  }
+  if (document.activeElement?.tagName === "TEXTAREA") return
+  if (e.key === "Enter") return app.toggleText()
+  if (e.key === "d" || e.key === "D") return app.toggleDoc()
+  if (e.key === "s" || e.key === "S") return app.toggleSlide()
   if (!app.slide) return
-  // slide mode
-  if (["ArrowDown", "ArrowRight", " ", "PageDown"].includes(e.key)) {
-    e.preventDefault()
-    if (!navLock) {
-      navLock = true
-      next()
-      setTimeout(() => (navLock = false), 400)
-    }
-  } else if (["ArrowUp", "ArrowLeft", "PageUp"].includes(e.key)) {
-    e.preventDefault()
-    if (!navLock) {
-      navLock = true
-      prev()
-      setTimeout(() => (navLock = false), 400)
-    }
-  } else if (e.key === "Home") {
-    e.preventDefault()
-    goTo(0)
-  } else if (e.key === "End") {
-    e.preventDefault()
-    goTo(slides.length - 1)
-  } else if (e.key === "e") app.toggleText()
+  if (e.key === "Home" || (e.key === "ArrowUp" && (e.metaKey || e.ctrlKey))) return (e.preventDefault(), goTo(0))
+  if (e.key === "End" || (e.key === "ArrowDown" && (e.metaKey || e.ctrlKey))) return (e.preventDefault(), goTo(slides.length - 1))
+  if (["ArrowDown", "ArrowRight", " ", "PageDown"].includes(e.key)) return (e.preventDefault(), next())
+  if (["ArrowUp", "ArrowLeft", "PageUp"].includes(e.key)) return (e.preventDefault(), prev())
 })
 
 let tY
@@ -393,7 +327,7 @@ deck.addEventListener("touchend", (e) => {
 
 // ===== LAYOUT — listen for panel changes from 1-editor =====
 app.on("layoutchange", ({ text, doc, slide }) => {
-  previewMode = slide ? "slides" : "doc"
+  previewMode = slide ? "slides" : doc ? "doc" : "none"
   if (doc || slide) {
     app.refreshDeck()
   } else {
@@ -401,15 +335,19 @@ app.on("layoutchange", ({ text, doc, slide }) => {
   }
 })
 
-// Live preview when text+doc side by side
-let docTimer
+// Live preview when text+doc or text+slide side by side
+let previewTimer
 app.on("editorinput", ({ value }) => {
-  if (app.doc && app.text && !app.slide) {
-    clearTimeout(docTimer)
-    docTimer = setTimeout(() => {
+  if (app.text && (app.doc || app.slide)) {
+    clearTimeout(previewTimer)
+    previewTimer = setTimeout(() => {
       app.content = value
-      deck.innerHTML = renderDoc(value)
-      app.emit("render")
+      if (app.slide) {
+        app.refreshDeck()
+      } else {
+        deck.innerHTML = renderDoc(value)
+        app.emit("render")
+      }
     }, 300)
   }
 })
@@ -431,31 +369,39 @@ proseStyle.textContent = `
   .prose hr { border: none; border-top: 1px solid; margin: 2em 0; opacity: 0.15; }
   .prose code { font-size: 0.9em; padding: 1px 4px; border-radius: 3px; }
 
-  .slide h1 { font-size: clamp(32px,5vw,56px); font-weight: 800; letter-spacing: -2px; line-height: 1.05; margin-bottom: 12px; }
-  .slide h2 { font-size: clamp(24px,3.5vw,40px); font-weight: 700; letter-spacing: -1px; line-height: 1.15; margin-bottom: 10px; }
-  .slide h3 { font-size: clamp(18px,2.5vw,28px); font-weight: 600; line-height: 1.2; margin-bottom: 8px; }
-  .slide p { font-size: clamp(16px,1.8vw,22px); line-height: 1.6; margin-bottom: 6px; }
+  .slide h1 { font-size: clamp(32px,5cqw,56px); font-weight: 800; letter-spacing: -2px; line-height: 1.05; margin-bottom: 12px; }
+  .slide h2 { font-size: clamp(24px,3.5cqw,40px); font-weight: 700; letter-spacing: -1px; line-height: 1.15; margin-bottom: 10px; }
+  .slide h3 { font-size: clamp(18px,2.5cqw,28px); font-weight: 600; line-height: 1.2; margin-bottom: 8px; }
+  .slide p { font-size: clamp(16px,1.8cqw,22px); line-height: 1.6; margin-bottom: 6px; }
   .slide ul, .slide ol { list-style: none; padding: 0; margin: 8px 0; }
-  .slide li { padding: 6px 0 6px 20px; position: relative; font-size: clamp(16px,1.8vw,22px); line-height: 1.5; }
+  .slide li { padding: 6px 0 6px 20px; position: relative; font-size: clamp(16px,1.8cqw,22px); line-height: 1.5; }
   .slide li::before { content: ""; position: absolute; left: 0; top: 1em; width: 5px; height: 5px; border-radius: 1px; background: #ec4899; }
   .slide code { font-family: inherit; font-size: 0.85em; padding: 1px 5px; border-radius: 3px; }
   .slide strong { font-weight: 600; }
   .slide a { color: #ec4899; }
   .slide img { max-width: 100%; border-radius: 8px; }
   .slide blockquote { border-left: 3px solid #ec4899; padding: 8px 16px; margin: 12px 0; border-radius: 0 6px 6px 0; }
+
+  @media (max-width: 640px) {
+    #topbar { display: none !important; }
+    #deck-dots { display: none !important; }
+    #deck-counter { display: none !important; }
+    #deck-progress { display: none !important; }
+  }
 `
 document.head.appendChild(proseStyle)
 
+// Resize — recalculate phone frame scale
+window.addEventListener("resize", () => {
+  if (app.text && app.slide) setDeckMode()
+})
+
 // Init
-previewMode = app.slide ? "slides" : "doc"
+previewMode = app.slide ? "slides" : app.doc ? "doc" : "none"
 if (app.doc || app.slide) {
   buildDeck()
   rebuildDots()
   updateChrome()
-  if (app.slide) {
-    const hashSlide = parseInt(location.hash.slice(1)) - 1
-    if (hashSlide > 0) requestAnimationFrame(() => goTo(hashSlide))
-  }
 } else {
   setDeckMode()
 }
