@@ -6,7 +6,7 @@ A collaborative markdown editor for slides
 
 - [x] Text Editor (line number, syntax highlighting, line/word count\*)
 - [x] Preview Slides or Document (theme\*, import/export\*)
-- [x] Collaboration (multi cursor, pointer, follow, comments\*)
+- [x] Collaboration (multi cursor, pointer, follow, comments\*, undo/redo\*)
 
 ## IDEAS
 

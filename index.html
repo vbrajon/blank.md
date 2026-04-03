@@ -4,27 +4,316 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>blank.md</title>
-    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
-    <script>
-      tailwind.config = { darkMode: "class" }
-      const t = localStorage.getItem("theme")
-      if (t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches)) document.documentElement.classList.add("dark")
-    </script>
+    <!-- prettier-ignore -->
     <style>
-      @font-face {
-        font-family: "Berkeley Mono";
-        src: url("fonts/BerkeleyMonoVariable.woff2") format("woff2");
-        font-style: normal;
-        font-display: swap;
-      }
-      .font-mono {
-        font-family: "Berkeley Mono", Monaco, "Courier New", monospace;
-      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      :root { --editor-width: 50%; --editor-text: #aaa; --editor-bg: #151516; --editor-border: rgb(255 255 255 / 0.08); --line-number: #555; --line-number-active: #fd0; }
+      html, body { width: 100%; height: 100%; overflow: hidden; display: flex; font-family: system-ui, sans-serif; background: var(--editor-bg); color: var(--editor-text); }
+      #editor { flex: 1; min-width: 0; height: 100%; background: transparent; color: var(--editor-text); border: none; outline: none; resize: none; font: 13px/22px monospace; padding: 16px 16px 16px 72px; tab-size: 2; white-space: pre-wrap; word-wrap: break-word; overflow-y: auto; overscroll-behavior: none; }
+      #slides { flex: 0 0 var(--editor-width); min-width: 0; height: 100%; overflow-y: auto; scroll-snap-type: y mandatory; border-left: 1px solid var(--editor-border); display: none; }
+      .slide { height: 100%; scroll-snap-align: start; overflow: hidden; display: flex; flex-direction: column; justify-content: center; padding: 2rem 3rem; }
+      .slide h1, .slide h2, .slide h3 { color: #eee; margin-bottom: 0.5em; }
     </style>
   </head>
-  <body class="h-screen overflow-hidden font-mono text-xs text-[#393a34] bg-white dark:text-[#ddd] dark:bg-[#151516]">
-    <script type="module" src="1-editor.js"></script>
-    <script type="module" src="2-preview.js"></script>
-    <script type="module" src="3-collab.js"></script>
+  <body>
+    <textarea id="editor" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+    <div id="slides"></div>
+    <script type="module">
+      const editor = document.getElementById("editor")
+      const slides = document.getElementById("slides")
+      editor.value = localStorage.text || (await fetch("/README.md").then((r) => r.text()))
+      editor.addEventListener("input", () => (localStorage.text = editor.value))
+      editor.addEventListener("keydown", (e) => {
+        if (e.key === "s" && (e.ctrlKey || e.metaKey)) return e.preventDefault()
+      })
+
+      // addon
+      enrich(editor)
+      preview(editor, slides)
+      count(editor, slides)
+      sync(editor, slides)
+
+      // enrich(textarea) — wraps a textarea with line numbers + syntax highlighting, fully self-contained
+      function enrich(editor) {
+        const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+
+        // Inject styles once
+        if (!document.getElementById("lined-css")) {
+          const style = document.createElement("style")
+          style.id = "lined-css"
+          style.textContent = `
+            .lined { position: relative; overflow: hidden; min-width: 0; height: 100%; }
+            .lined > textarea { position: absolute; inset: 0; width: 100% !important; height: 100% !important; color: transparent; caret-color: #dfdfdf; -webkit-text-fill-color: transparent; z-index: 1; background: transparent; }
+            .lined > .lined-hl { position: absolute; inset: 0; pointer-events: none; overflow-y: scroll; scrollbar-width: none; padding-bottom: 1lh; }
+            .lined > .lined-hl::-webkit-scrollbar { display: none; }
+            .lined > .lined-hl > div { min-height: 1lh; }
+            .lined > .lined-ln { position: absolute; left: 0; top: 0; bottom: 0; width: 64px; text-align: right; overflow-y: scroll; user-select: none; pointer-events: none; z-index: 2; scrollbar-width: none; background: inherit; padding-bottom: 1lh; }
+            .lined > .lined-ln::-webkit-scrollbar { display: none; }
+            .lined > .lined-ln > div.ln-active { color: var(--line-number-active); }
+            .lined > .lined-ln > div.ln-sep { border-top: 1px solid var(--editor-border); }
+            .lined .h { color: #dfdfdf; font-weight: 700; }
+            .lined .code { color: #4ec99e; }
+            .lined .tick { color: #d49575; }
+            .lined .bold { color: #dfdfdf; font-weight: 700; }
+            .lined .bullet { color: #cf8e8e; }
+          `
+          document.head.appendChild(style)
+        }
+
+        // Read textarea styles before reparenting
+        const cs = getComputedStyle(editor)
+        const font = cs.font
+        const padding = cs.padding
+        const paddingTop = cs.paddingTop
+        const tabSize = cs.tabSize
+        const whiteSpace = cs.whiteSpace
+        const wordWrap = cs.wordWrap
+        const flex = cs.flex
+        const bg = cs.backgroundColor
+
+        // Create wrapper, take textarea's place in layout
+        const wrap = document.createElement("div")
+        wrap.className = "lined"
+        wrap.style.cssText = `flex:${flex};min-width:0;height:100%;background:${bg}`
+        editor.parentNode.insertBefore(wrap, editor)
+        wrap.appendChild(editor)
+
+        // Shared style string for text rendering
+        const textCSS = `font:${font};padding:${padding};tab-size:${tabSize};white-space:${whiteSpace};word-wrap:${wordWrap};overflow-wrap:break-word;`
+
+        // Highlight overlay
+        const hlEl = document.createElement("div")
+        hlEl.className = "lined-hl"
+        hlEl.style.cssText = textCSS + `color:var(--editor-text);`
+        wrap.insertBefore(hlEl, editor)
+
+        // Line numbers
+        const lnEl = document.createElement("div")
+        lnEl.className = "lined-ln"
+        lnEl.style.cssText = `font:${font};padding-top:${paddingTop};padding-right:12px;color:var(--line-number);`
+        wrap.insertBefore(lnEl, editor)
+
+        function highlight(text) {
+          const lines = text.split("\n"),
+            out = []
+          let i = 0,
+            inCode = false
+          while (i < lines.length) {
+            const raw = lines[i]
+            if (raw.startsWith("```")) {
+              inCode = !inCode
+              out.push(`<div><span class="code">${esc(raw)}</span></div>`)
+              i++
+              continue
+            }
+            if (inCode) {
+              out.push(`<div><span class="code">${esc(raw)}</span></div>`)
+              i++
+              continue
+            }
+            if (/^#{1,6} /.test(raw)) {
+              out.push(`<div><span class="h">${esc(raw)}</span></div>`)
+              i++
+              continue
+            }
+            out.push(
+              "<div>" +
+                (esc(raw) || " ")
+                  .replace(/(\*\*[^*]+\*\*)/g, '<span class="bold">$1</span>')
+                  .replace(/(`[^`]+`)/g, '<span class="tick">$1</span>')
+                  .replace(/^([-*+]\s)/, '<span class="bullet">$1</span>') +
+                "</div>",
+            )
+            i++
+          }
+          return out.join("")
+        }
+
+        function update() {
+          hlEl.innerHTML = highlight(editor.value)
+          linenums()
+        }
+
+        function linenums() {
+          const secs = [],
+            activeIdx = (+location.hash.slice(1) || 1) - 1
+          let line = 0
+          editor.value.split(/\n\n(?=#{1,6} |\d+\. )/).forEach((chunk, i) => {
+            if (i > 0) line += 1
+            const start = line
+            line += chunk.split("\n").length
+            secs.push(start)
+          })
+          const from = secs[activeIdx] ?? 0
+          const to = secs[activeIdx + 1] ?? hlEl.children.length
+          let html = ""
+          for (let i = 0; i < hlEl.children.length; i++) {
+            const cls = (i >= from && i < to ? " ln-active" : "") + (secs.indexOf(i) > 0 ? " ln-sep" : "")
+            html += `<div style="height:${hlEl.children[i].getBoundingClientRect().height}px"${cls ? ` class="${cls.trim()}"` : ""}>${i + 1}</div>`
+          }
+          lnEl.innerHTML = html
+        }
+
+        editor.addEventListener("input", update)
+        editor.addEventListener("scroll", () => {
+          hlEl.scrollTop = editor.scrollTop
+          lnEl.scrollTop = editor.scrollTop
+        })
+        addEventListener("hashchange", linenums)
+        update()
+      }
+
+      // preview(editor, slides) — renders markdown into slide DOM, parses sections
+      function preview(editor, slides) {
+        function toHTML(text) {
+          return text
+            .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+            .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+            .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+            .replace(/^```(\w*)\n([\s\S]*?)^```$/gm, (_, lang, code) => `<pre><code>${code.replace(/</g, "&lt;")}</code></pre>`)
+            .replace(/^[-*+] (.+)$/gm, "<li>$1</li>")
+            .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
+            .replace(/`([^`]+)`/g, "<code>$1</code>")
+            .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+            .replace(/(?:^|\n)(?!<[huplso])((?:[^\n<].*\n?)+)/g, (_, p) => `<p>${p.trim()}</p>`)
+        }
+
+        function render() {
+          const text = editor.value
+          let line = 0
+          const sections = text.split(/\n\n(?=#{1,6} |\d+\. )/).map((chunk, i) => {
+            if (i > 0) line += 1
+            const start = line
+            const lines = chunk.split("\n")
+            line += lines.length
+            return { start, lines }
+          })
+          slides.innerHTML = sections.map((s) => `<div class="slide">${toHTML(s.lines.join("\n"))}</div>`).join("")
+          slides.sections = sections
+        }
+
+        slides.style.display = "block"
+        const lined = editor.closest(".lined") || editor
+        lined.style.flex = `0 0 var(--editor-width)`
+        editor.addEventListener("input", render)
+        render()
+      }
+
+      // sync(editor, slides) — bidirectional scroll sync between editor and slides, keyboard slide navigation
+      function sync(editor, slides) {
+        const getHash = () => (+location.hash.slice(1) || 1) - 1
+
+        function goTo(idx, { slide = true, text = true, force = false } = {}) {
+          location.hash = idx + 1
+          if (slide) {
+            skipScroll = true
+            slides.children[idx]?.scrollIntoView({ behavior: "instant" })
+          }
+          if (text && (force || document.activeElement !== editor)) {
+            const sec = slides.sections[idx]
+            if (!sec) return
+            const hl = document.querySelector(".lined-hl")
+            const ln = document.querySelector(".lined-ln")
+            const line = hl?.children[sec.start]
+            if (!line) return
+            const top = line.getBoundingClientRect().top - hl.getBoundingClientRect().top + hl.scrollTop
+            editor.scrollTop = top
+            if (hl) hl.scrollTop = top
+            if (ln) ln.scrollTop = top
+          }
+        }
+
+        // editor cursor → hash + slide scroll
+        function syncCursor() {
+          const pos = editor.value.substring(0, editor.selectionStart).split("\n").length
+          const idx = slides.sections.findLastIndex((s) => pos >= s.start + 1)
+          goTo(Math.max(0, idx), { text: false })
+        }
+        editor.addEventListener("click", syncCursor)
+        editor.addEventListener("keydown", (e) => {
+          if (e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End") setTimeout(syncCursor)
+        })
+
+        // slide natural scroll → hash + text scroll (no slide scroll to avoid flicker)
+        let skipScroll = false
+        slides.addEventListener("scroll", () => {
+          if (skipScroll) return (skipScroll = false)
+          const idx = Math.round(slides.scrollTop / slides.clientHeight)
+          if (getHash() !== idx) goTo(idx, { slide: false, force: true })
+        })
+
+        // keyboard slide navigation → hash + both scroll
+        document.addEventListener("keydown", (e) => {
+          if (document.activeElement?.tagName === "TEXTAREA") return
+          const last = slides.children.length - 1
+          if (e.key === "Home" || (e.key === "ArrowUp" && (e.metaKey || e.ctrlKey))) return (e.preventDefault(), goTo(0))
+          if (e.key === "End" || (e.key === "ArrowDown" && (e.metaKey || e.ctrlKey))) return (e.preventDefault(), goTo(last))
+          if (["ArrowDown", "ArrowRight", " ", "PageDown"].includes(e.key)) return (e.preventDefault(), goTo(Math.min(last, getHash() + 1)))
+          if (["ArrowUp", "ArrowLeft", "PageUp"].includes(e.key)) return (e.preventDefault(), goTo(Math.max(0, getHash() - 1)))
+        })
+
+        goTo(getHash())
+      }
+
+      // count(editor, slides) — adds word count, slide count, and slide progress as a single overlay addon
+      function count(editor, slides) {
+        document.getElementById("count-root")?.remove()
+
+        if (!document.getElementById("count-css")) {
+          const style = document.createElement("style")
+          style.id = "count-css"
+          style.textContent = `
+            .count { position: fixed; inset: 0; pointer-events: none; z-index: 4; font: 12px/1 monospace; color: var(--editor-text); }
+            .count-box { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; background: rgba(21,21,22,0.88); }
+            .count-editor,
+            .count-slides { position: fixed; bottom: 12px; width: var(--editor-width); padding: 0 12px; display: flex; justify-content: flex-end; }
+            .count-editor { left: 0; }
+            .count-slides { right: 0; }
+            .count-progress { position: fixed; top: 0; left: var(--editor-width); width: var(--editor-width); height: 1px; background: rgba(255,255,255,0.08); overflow: hidden; }
+            .count-progress > div { width: 0; height: 100%; background: var(--line-number-active); transition: width 120ms ease-out; }
+          `
+          document.head.appendChild(style)
+        }
+
+        const root = document.createElement("div")
+        root.id = "count-root"
+        root.className = "count"
+        root.innerHTML = `
+          <div class="count-editor"><div class="count-box"></div></div>
+          <div class="count-slides"><div class="count-box"></div></div>
+          <div class="count-progress"><div></div></div>
+        `
+        document.body.appendChild(root)
+
+        const wordsEl = root.querySelector(".count-editor .count-box")
+        const slidesEl = root.querySelector(".count-slides .count-box")
+        const progressEl = root.querySelector(".count-progress > div")
+
+        const getWordCount = (text) => (text.match(/\S+/g) || []).length
+
+        function getCurrentSlide(total) {
+          if (!slides.clientHeight) return Math.min(total, Math.max(1, +location.hash.slice(1) || 1))
+          return Math.min(total, Math.max(1, Math.round(slides.scrollTop / slides.clientHeight) + 1))
+        }
+
+        function update() {
+          const total = Math.max(1, slides.children.length)
+          const current = getCurrentSlide(total)
+          const words = getWordCount(editor.value)
+          wordsEl.textContent = `${words} word${words === 1 ? "" : "s"}`
+          slidesEl.textContent = `${current} / ${total}`
+          progressEl.style.width = `${(current / total) * 100}%`
+        }
+
+        editor.addEventListener("input", update)
+        slides.addEventListener("scroll", update)
+        addEventListener("hashchange", update)
+
+        const observer = new MutationObserver(update)
+        observer.observe(slides, { childList: true })
+
+        update()
+      }
+    </script>
   </body>
 </html>
