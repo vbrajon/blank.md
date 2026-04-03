@@ -32,30 +32,31 @@
       preview(editor, slides)
       count(editor, slides)
       sync(editor, slides)
+      collab(editor)
 
       // enrich(textarea) — wraps a textarea with line numbers + syntax highlighting, fully self-contained
       function enrich(editor) {
         const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 
         // Inject styles once
-        if (!document.getElementById("lined-css")) {
+        if (!document.getElementById("enrich-css")) {
           const style = document.createElement("style")
-          style.id = "lined-css"
+          style.id = "enrich-css"
           style.textContent = `
-            .lined { position: relative; overflow: hidden; min-width: 0; height: 100%; }
-            .lined > textarea { position: absolute; inset: 0; width: 100% !important; height: 100% !important; color: transparent; caret-color: #dfdfdf; -webkit-text-fill-color: transparent; z-index: 1; background: transparent; }
-            .lined > .lined-hl { position: absolute; inset: 0; pointer-events: none; overflow-y: scroll; scrollbar-width: none; padding-bottom: 1lh; }
-            .lined > .lined-hl::-webkit-scrollbar { display: none; }
-            .lined > .lined-hl > div { min-height: 1lh; }
-            .lined > .lined-ln { position: absolute; left: 0; top: 0; bottom: 0; width: 64px; text-align: right; overflow-y: scroll; user-select: none; pointer-events: none; z-index: 2; scrollbar-width: none; background: inherit; padding-bottom: 1lh; }
-            .lined > .lined-ln::-webkit-scrollbar { display: none; }
-            .lined > .lined-ln > div.ln-active { color: var(--line-number-active); }
-            .lined > .lined-ln > div.ln-sep { border-top: 1px solid var(--editor-border); }
-            .lined .h { color: #dfdfdf; font-weight: 700; }
-            .lined .code { color: #4ec99e; }
-            .lined .tick { color: #d49575; }
-            .lined .bold { color: #dfdfdf; font-weight: 700; }
-            .lined .bullet { color: #cf8e8e; }
+            .enrich { position: relative; overflow: hidden; min-width: 0; height: 100%; }
+            .enrich > textarea { position: absolute; inset: 0; width: 100% !important; height: 100% !important; color: transparent; caret-color: #dfdfdf; -webkit-text-fill-color: transparent; z-index: 1; background: transparent; }
+            .enrich > .enrich-hl { position: absolute; inset: 0; pointer-events: none; overflow-y: scroll; scrollbar-width: none; padding-bottom: 1lh; }
+            .enrich > .enrich-hl::-webkit-scrollbar { display: none; }
+            .enrich > .enrich-hl > div { min-height: 1lh; }
+            .enrich > .enrich-ln { position: absolute; left: 0; top: 0; bottom: 0; width: 64px; text-align: right; overflow-y: scroll; user-select: none; pointer-events: none; z-index: 2; scrollbar-width: none; background: inherit; padding-bottom: 1lh; }
+            .enrich > .enrich-ln::-webkit-scrollbar { display: none; }
+            .enrich > .enrich-ln > div.ln-active { color: var(--line-number-active); }
+            .enrich > .enrich-ln > div.ln-sep { border-top: 1px solid var(--editor-border); }
+            .enrich .h { color: #dfdfdf; font-weight: 700; }
+            .enrich .code { color: #4ec99e; }
+            .enrich .tick { color: #d49575; }
+            .enrich .bold { color: #dfdfdf; font-weight: 700; }
+            .enrich .bullet { color: #cf8e8e; }
           `
           document.head.appendChild(style)
         }
@@ -73,7 +74,7 @@
 
         // Create wrapper, take textarea's place in layout
         const wrap = document.createElement("div")
-        wrap.className = "lined"
+        wrap.className = "enrich"
         wrap.style.cssText = `flex:${flex};min-width:0;height:100%;background:${bg}`
         editor.parentNode.insertBefore(wrap, editor)
         wrap.appendChild(editor)
@@ -83,13 +84,13 @@
 
         // Highlight overlay
         const hlEl = document.createElement("div")
-        hlEl.className = "lined-hl"
+        hlEl.className = "enrich-hl"
         hlEl.style.cssText = textCSS + `color:var(--editor-text);`
         wrap.insertBefore(hlEl, editor)
 
         // Line numbers
         const lnEl = document.createElement("div")
-        lnEl.className = "lined-ln"
+        lnEl.className = "enrich-ln"
         lnEl.style.cssText = `font:${font};padding-top:${paddingTop};padding-right:12px;color:var(--line-number);`
         wrap.insertBefore(lnEl, editor)
 
@@ -193,8 +194,8 @@
         }
 
         slides.style.display = "block"
-        const lined = editor.closest(".lined") || editor
-        lined.style.flex = `0 0 var(--editor-width)`
+        const enrich = editor.closest(".enrich") || editor
+        enrich.style.flex = `0 0 var(--editor-width)`
         editor.addEventListener("input", render)
         render()
       }
@@ -212,8 +213,8 @@
           if (text && (force || document.activeElement !== editor)) {
             const sec = slides.sections[idx]
             if (!sec) return
-            const hl = document.querySelector(".lined-hl")
-            const ln = document.querySelector(".lined-ln")
+            const hl = document.querySelector(".enrich-hl")
+            const ln = document.querySelector(".enrich-ln")
             const line = hl?.children[sec.start]
             if (!line) return
             const top = line.getBoundingClientRect().top - hl.getBoundingClientRect().top + hl.scrollTop
@@ -313,6 +314,298 @@
         observer.observe(slides, { childList: true })
 
         update()
+      }
+
+      // collab(editor) — real-time collaboration via Yjs + PartyKit
+      function collab(editor) {
+        const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+
+        // --- Styles ---
+        if (!document.getElementById("collab-css")) {
+          const style = document.createElement("style")
+          style.id = "collab-css"
+          style.textContent = `
+            .collab-users { position: fixed; top: 8px; right: 8px; display: flex; align-items: center; gap: 4px; z-index: 5; }
+            .collab-dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.3); cursor: pointer; transition: transform 0.1s; }
+            .collab-dot:hover { transform: scale(1.5); }
+            .collab-dot.following { box-shadow: 0 0 0 2px var(--line-number-active); }
+            .collab-count { font: 11px/1 monospace; color: var(--editor-text); margin-left: 2px; }
+            .remote-cursor { position: absolute; width: 2px; pointer-events: none; z-index: 3; border-radius: 1px; }
+            .remote-cursor-label { position: absolute; top: -18px; left: -1px; color: #fff; font: 600 10px/14px monospace; padding: 1px 6px; border-radius: 3px 3px 3px 0; white-space: nowrap; }
+            .remote-selection { position: absolute; pointer-events: none; z-index: 2; opacity: 0.25; }
+            .remote-pointer { position: fixed; pointer-events: none; z-index: 9999; width: 0; height: 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.05)) drop-shadow(0 8px 26px rgba(0,0,0,0.06)); isolation: isolate; transition: left 60ms ease-out, top 60ms ease-out; }
+            .remote-pointer svg { width: 16px; height: 16px; position: absolute; top: 0; left: 0; }
+            .remote-pointer-bubble { position: absolute; top: 13px; left: 13px; background: currentColor; border-radius: 9999px; padding: 5px 9px; font: 500 13px/1 system-ui, sans-serif; white-space: nowrap; }
+            .remote-pointer-label { opacity: 0.95; filter: invert() grayscale() brightness(1.3) contrast(9000); mix-blend-mode: luminosity; }
+            @supports (color: oklch(from black l c h)) { .remote-pointer-label { opacity: 1; filter: none; mix-blend-mode: normal; color: oklch(from var(--c) clamp(0, (l / .623 - 1) * -infinity, 1) 0 h) !important; } }
+          `
+          document.head.appendChild(style)
+        }
+
+        // --- DOM ---
+        const usersEl = document.createElement("div")
+        usersEl.className = "collab-users"
+        document.body.appendChild(usersEl)
+
+        const cursorsEl = document.createElement("div")
+        cursorsEl.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:3;overflow:hidden;"
+        ;(editor.closest(".enrich") || editor.parentNode).appendChild(cursorsEl)
+
+        const pointersEl = document.createElement("div")
+        document.body.appendChild(pointersEl)
+
+        // --- Identity ---
+        const identities = [
+          { name: "Yellow", color: "#fd0" },
+          { name: "Pink", color: "#f6e" },
+          { name: "Red", color: "#f34" },
+          { name: "Orange", color: "#fa3" },
+          { name: "Green", color: "#7d0" },
+          { name: "Blue", color: "#39f" },
+          { name: "Cyan", color: "#3df" },
+        ]
+        let user = { name: localStorage.getItem("collab-name"), color: localStorage.getItem("collab-color") }
+        if (!user.name || !identities.find((i) => i.name === user.name)) {
+          user = identities[Math.floor(Math.random() * identities.length)]
+          localStorage.setItem("collab-name", user.name)
+          localStorage.setItem("collab-color", user.color)
+        }
+
+        // --- State ---
+        let Y, ydoc, ytext, awareness
+        let knownValue = editor.value
+        let ready = false
+        let followId = null
+
+        // --- Diff: simple prefix/suffix match ---
+        function syncToY() {
+          if (!ytext || !ready) return
+          const newVal = editor.value
+          if (newVal === knownValue) return
+          let start = 0
+          while (start < knownValue.length && start < newVal.length && knownValue[start] === newVal[start]) start++
+          let endOld = knownValue.length,
+            endNew = newVal.length
+          while (endOld > start && endNew > start && knownValue[endOld - 1] === newVal[endNew - 1]) {
+            endOld--
+            endNew--
+          }
+          ydoc.transact(() => {
+            if (endOld > start) ytext.delete(start, endOld - start)
+            if (endNew > start) ytext.insert(start, newVal.slice(start, endNew))
+          })
+          knownValue = newVal
+        }
+
+        // --- Caret coordinates (mirror div technique) ---
+        let caretDiv, caretMarker
+        function getCaretCoords(pos) {
+          if (!caretDiv) {
+            caretDiv = document.createElement("div")
+            caretDiv.style.cssText = "position:absolute;visibility:hidden;white-space:pre-wrap;word-wrap:break-word;overflow:hidden;"
+            caretMarker = document.createElement("span")
+            caretMarker.textContent = "\u200b"
+            document.body.appendChild(caretDiv)
+          }
+          const cs = getComputedStyle(editor)
+          for (const p of ["font", "padding", "tabSize", "borderWidth"]) caretDiv.style[p] = cs[p]
+          caretDiv.style.width = editor.clientWidth + "px"
+          caretDiv.textContent = editor.value.substring(0, pos)
+          caretDiv.appendChild(caretMarker)
+          const lineH = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.7
+          return { top: caretMarker.offsetTop - 4, left: caretMarker.offsetLeft, height: lineH, selHeight: lineH }
+        }
+
+        // --- Render remote cursors & selections ---
+        function renderCursors() {
+          if (!awareness || !Y) return
+          const states = awareness.getStates()
+          const resolve = (rel) => Y.createAbsolutePositionFromRelativePosition(JSON.parse(rel), ydoc)
+          let html = ""
+          for (const [id, state] of states) {
+            if (id === awareness.clientID || !state.user || !state.cursor) continue
+            const { name, color } = state.user
+            const head = resolve(state.cursor.head)
+            if (!head) continue
+            const c = getCaretCoords(head.index)
+            const top = c.top - editor.scrollTop
+            html += `<div class="remote-cursor" style="left:${c.left}px;top:${top}px;height:${c.height}px;background:${color}"><div class="remote-cursor-label" style="background:${color}">${esc(name)}</div></div>`
+            const anchor = resolve(state.cursor.anchor)
+            if (anchor && anchor.index !== head.index) {
+              const from = Math.min(anchor.index, head.index),
+                to = Math.max(anchor.index, head.index)
+              const fc = getCaretCoords(from),
+                tc = getCaretCoords(to)
+              const padL = parseFloat(getComputedStyle(editor).paddingLeft) || 0
+              if (fc.top === tc.top) {
+                html += `<div class="remote-selection" style="left:${fc.left}px;top:${fc.top - editor.scrollTop}px;width:${tc.left - fc.left}px;height:${fc.selHeight}px;background:${color}"></div>`
+              } else {
+                for (let y = fc.top; y <= tc.top; y += fc.height) {
+                  const lx = y === fc.top ? fc.left : padL,
+                    rx = y === tc.top ? tc.left : editor.clientWidth
+                  html += `<div class="remote-selection" style="left:${lx}px;top:${y - editor.scrollTop}px;width:${rx - lx}px;height:${fc.selHeight}px;background:${color}"></div>`
+                }
+              }
+            }
+          }
+          cursorsEl.innerHTML = html
+          // Follow mode: scroll to followed user's cursor
+          if (followId === null) return
+          const state = states.get(followId)
+          const head = state?.cursor ? resolve(state.cursor.head) : null
+          if (!head) return
+          if (slides.sections) {
+            const line = editor.value.substring(0, head.index).split("\n").length
+            const idx = slides.sections.findLastIndex((s) => line >= s.start + 1)
+            if (idx >= 0) location.hash = idx + 1
+          }
+          const c = getCaretCoords(head.index)
+          if (c.top < editor.scrollTop || c.top > editor.scrollTop + editor.clientHeight - c.height) {
+            const scrollTo = c.top - editor.clientHeight / 2
+            editor.scrollTop = scrollTo
+            const hl = document.querySelector(".enrich-hl"),
+              ln = document.querySelector(".enrich-ln")
+            if (hl) hl.scrollTop = scrollTo
+            if (ln) ln.scrollTop = scrollTo
+          }
+        }
+
+        // --- Render remote mouse pointers ---
+        function renderPointers() {
+          if (!awareness) return
+          let html = ""
+          for (const [id, state] of awareness.getStates()) {
+            if (id === awareness.clientID || !state.user || !state.pointer) continue
+            const { name, color } = state.user
+            const x = state.pointer.rx * innerWidth,
+              y = state.pointer.ry * innerHeight
+            html += `<div class="remote-pointer" style="left:${x}px;top:${y}px;color:${color}"><svg viewBox="0 0 32 32"><path fill="currentColor" d="m.088 1.75 11.25 29.422c.409 1.07 1.908 1.113 2.377.067l5.223-11.653c.13-.288.36-.518.648-.648l11.653-5.223c1.046-.47 1.004-1.968-.067-2.377L1.75.088C.71-.31-.31.71.088 1.75Z"/></svg><div class="remote-pointer-bubble"><span class="remote-pointer-label" style="--c:${color};color:${color}">${esc(name)}</span></div></div>`
+          }
+          pointersEl.innerHTML = html
+        }
+
+        // --- Render user dots ---
+        function renderUsers() {
+          if (!awareness) return
+          const states = awareness.getStates()
+          let html = ""
+          for (const [id, state] of states) {
+            if (!state.user) continue
+            const isLocal = id === awareness.clientID
+            html += `<span class="collab-dot${id === followId ? " following" : ""}" style="background:${state.user.color}" title="${esc(state.user.name)}${isLocal ? " (you)" : ""}"${isLocal ? "" : ` data-id="${id}"`}></span>`
+          }
+          if (states.size > 1) html += `<span class="collab-count">${states.size}</span>`
+          usersEl.innerHTML = html
+        }
+
+        // --- Follow mode ---
+        usersEl.addEventListener("click", (e) => {
+          const dot = e.target.closest("[data-id]")
+          if (!dot) return
+          const id = +dot.dataset.id
+          followId = followId === id ? null : id
+          renderUsers()
+          renderCursors()
+        })
+        const stopFollow = () => {
+          if (followId !== null) {
+            followId = null
+            renderUsers()
+          }
+        }
+        editor.addEventListener("keydown", stopFollow)
+        editor.addEventListener("click", stopFollow)
+
+        // --- Yjs setup ---
+        async function setup() {
+          try {
+            Y = await import("https://esm.sh/yjs@13")
+            const { default: YPartyKitProvider } = await import("https://esm.sh/y-partykit@0/provider")
+
+            ydoc = new Y.Doc()
+            ytext = ydoc.getText("markdown")
+            const room = "blank-md-" + location.host + location.pathname.replace(/[^a-z0-9]/gi, "-")
+            const provider = new YPartyKitProvider("blank-md.vbrajon.partykit.dev", room, ydoc)
+            awareness = provider.awareness
+            awareness.setLocalStateField("user", user)
+
+            // Seed content: use peer content if available, else local content (lowest clientID wins)
+            const localContent = editor.value
+            let seeded = false
+            function initContent() {
+              if (seeded) return
+              const peerContent = ytext.toString()
+              if (peerContent) {
+                seeded = ready = true
+                editor.value = knownValue = peerContent
+                editor.dispatchEvent(new Event("input"))
+                return renderUsers()
+              }
+              if (awareness.getStates().size > 1 && ydoc.clientID !== Math.min(...awareness.getStates().keys())) return
+              seeded = ready = true
+              if (localContent) {
+                ytext.insert(0, localContent)
+                knownValue = localContent
+              }
+              renderUsers()
+            }
+
+            // Preserve cursor position across remote edits
+            let relStart, relEnd
+            ydoc.on("beforeTransaction", () => {
+              if (!ytext?.length) return
+              relStart = Y.createRelativePositionFromTypeIndex(ytext, Math.min(editor.selectionStart, ytext.length))
+              relEnd = Y.createRelativePositionFromTypeIndex(ytext, Math.min(editor.selectionEnd, ytext.length))
+            })
+
+            // Apply remote changes to editor
+            ytext.observe((_, tx) => {
+              if (tx.local) return
+              if (!seeded) seeded = ready = true
+              editor.value = knownValue = ytext.toString()
+              if (relStart) {
+                const a = Y.createAbsolutePositionFromRelativePosition(relStart, ydoc)
+                if (a) editor.selectionStart = a.index
+              }
+              if (relEnd) {
+                const a = Y.createAbsolutePositionFromRelativePosition(relEnd, ydoc)
+                if (a) editor.selectionEnd = a.index
+              }
+              editor.dispatchEvent(new Event("input"))
+              renderCursors()
+            })
+
+            // Broadcast cursor + pointer
+            document.addEventListener("selectionchange", () => {
+              if (!ytext || document.activeElement !== editor) return
+              awareness.setLocalStateField("cursor", {
+                anchor: JSON.stringify(Y.createRelativePositionFromTypeIndex(ytext, editor.selectionStart)),
+                head: JSON.stringify(Y.createRelativePositionFromTypeIndex(ytext, editor.selectionEnd)),
+              })
+            })
+            document.addEventListener("mousemove", (e) => awareness.setLocalStateField("pointer", { rx: e.clientX / innerWidth, ry: e.clientY / innerHeight }))
+            document.addEventListener("mouseleave", () => awareness.setLocalStateField("pointer", null))
+
+            // Re-render on any awareness change
+            awareness.on("change", () => {
+              renderCursors()
+              renderPointers()
+              renderUsers()
+            })
+            editor.addEventListener("scroll", renderCursors)
+
+            provider.on("sync", () => setTimeout(initContent, 200))
+            provider.on("synced", () => setTimeout(initContent, 200))
+            setTimeout(initContent, 1000)
+            renderUsers()
+            console.log("[collab] Room:", room)
+          } catch (e) {
+            console.warn("[collab] Not available:", e.message)
+          }
+        }
+
+        editor.addEventListener("input", syncToY)
+        setup()
       }
     </script>
   </body>
