@@ -2,40 +2,133 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>blank.md</title>
     <!-- prettier-ignore -->
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      :root { --editor-width: 50%; --editor-text: #aaa; --editor-bg: #151516; --editor-border: rgb(255 255 255 / 0.08); --line-number: #555; --line-number-active: #fd0; }
+      :root { --editor-text: #aaa; --editor-bg: #151516; --line-number: #555; --line-number-active: #fd0; }
       html, body { width: 100%; height: 100%; overflow: hidden; display: flex; font-family: system-ui, sans-serif; background: var(--editor-bg); color: var(--editor-text); }
-      #editor { flex: 1; min-width: 0; height: 100%; background: transparent; color: var(--editor-text); border: none; outline: none; resize: none; font: 13px/22px monospace; padding: 16px 16px 16px 72px; tab-size: 2; white-space: pre-wrap; word-wrap: break-word; overflow-y: auto; overscroll-behavior: none; }
-      #slides { flex: 0 0 var(--editor-width); min-width: 0; height: 100%; overflow-y: auto; scroll-snap-type: y mandatory; border-left: 1px solid var(--editor-border); display: none; }
+      #editor { flex: 1; min-width: 0; height: 100%; background: transparent; color: var(--editor-text); border: none; outline: none; resize: none; font: 13px/22px monospace; padding: 16px; tab-size: 2; white-space: pre-wrap; word-wrap: break-word; overflow-y: auto; overscroll-behavior: none; }
+      #slides { flex: 1; min-width: 0; height: 100%; overflow-y: auto; scroll-snap-type: y mandatory; box-shadow: -1px 0 0 rgb(255 255 255 / 0.08); display: none; }
       .slide { height: 100%; scroll-snap-align: start; overflow: hidden; display: flex; flex-direction: column; justify-content: center; padding: 2rem 3rem; }
       .slide h1, .slide h2, .slide h3 { color: #eee; margin-bottom: 0.5em; }
+      body:not(.editor) .enrich, body:not(.editor) > #editor { display: none; }
+      body.slides #slides { display: block; }
     </style>
   </head>
-  <body>
+  <body class="editor">
     <textarea id="editor" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
     <div id="slides"></div>
     <script type="module">
+      addEventListener("gesturestart", (e) => e.preventDefault())
+      addEventListener("touchmove", (e) => e.touches.length > 1 && e.preventDefault(), { passive: false })
+      // addEventListener("beforeunload", (e) => (e.returnValue = 0))
       const editor = document.getElementById("editor")
       const slides = document.getElementById("slides")
       editor.value = localStorage.text || (await fetch("/README.md").then((r) => r.text()))
       editor.addEventListener("input", () => (localStorage.text = editor.value))
-      editor.addEventListener("keydown", (e) => {
-        if (e.key === "s" && (e.ctrlKey || e.metaKey)) return e.preventDefault()
+      addEventListener("keydown", (e) => {
+        // NOTE: copy URL to clipboard or download file
+        if (e.key === "s" && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault()
+          const blob = new Blob([editor.value], { type: "text/markdown" })
+          const a = document.createElement("a")
+          a.href = URL.createObjectURL(blob)
+          a.download = editor.value.split("\n")[0].replace(/^#+\s*/, "") + ".md"
+          a.click()
+          URL.revokeObjectURL(a.href)
+        }
+
+        // FOR DEBUG, toggle classes
+        if (e.key === "1") document.body.classList.toggle("editor")
+        if (e.key === "2") document.body.classList.toggle("slides")
+        if (e.key === "3") document.body.classList.toggle("lines")
+        if (e.key === "4") document.body.classList.toggle("count-words")
+        if (e.key === "5") document.body.classList.toggle("count-slides")
       })
 
-      // addon
-      enrich(editor)
-      preview(editor, slides)
-      count(editor, slides)
-      sync(editor, slides)
-      collab(editor)
+      // --- UI ---
+      ui()
 
-      // enrich(textarea) — wraps a textarea with line numbers + syntax highlighting, fully self-contained
-      function enrich(editor) {
+      function ui() {
+        const style = document.createElement("style")
+        style.id = "ui-css"
+        style.textContent = `
+          .ui-close, .ui-plus, .ui-toggle, .ui-count { position: fixed; z-index: 99999; background: rgba(21,21,22,0.88); color: var(--editor-text); border: none; font: 12px/1 monospace; cursor: pointer; touch-action: manipulation; translate: -1px; }
+          .ui-close, .ui-plus, .ui-toggle { top: 0; right: 0; padding: 4px 8px; font-size: 18px; }
+          .ui-close-editor { right: 50%; }
+          .ui-count { bottom: 0; right: 0; padding: 0 10px; min-height: 28px; display: inline-flex; align-items: center; }
+          body.editor.slides .ui-count-editor { right: 50%; }
+          body.editor.slides .ui-plus { display: none; }
+          body:not(.count-words) .ui-count-editor { display: none; }
+          body:not(.count-slides) .ui-count-slides { display: none; }
+          body:not(.editor.slides) .ui-close-editor, body:not(.editor.slides) .ui-close-slides { display: none; }
+          body:not(.editor) .ui-close-editor, body:not(.slides) .ui-close-slides { display: none; }
+          body:not(.editor) .ui-count-editor, body:not(.slides) .ui-count-slides { display: none; }
+          @media (max-width: 800px) { .ui-close, .ui-plus { display: none !important; } }
+          @media (min-width: 801px) { .ui-toggle { display: none !important; } }
+        `
+        document.head.appendChild(style)
+
+        const root = document.createElement("div")
+        root.id = "ui-root"
+        root.innerHTML = `
+          <button class="ui-close ui-close-editor">✕</button>
+          <button class="ui-close ui-close-slides">✕</button>
+          <button class="ui-plus">+</button>
+          <button class="ui-toggle">⇄</button>
+          <div class="ui-count ui-count-editor"></div>
+          <div class="ui-count ui-count-slides"></div>
+        `
+        document.body.appendChild(root)
+
+        const wordsEl = root.querySelector(".ui-count-editor")
+        const slidesEl = root.querySelector(".ui-count-slides")
+
+        // button events
+        root.querySelector(".ui-close-editor").onclick = () => document.body.classList.remove("editor")
+        root.querySelector(".ui-close-slides").onclick = () => document.body.classList.remove("slides")
+        root.querySelector(".ui-plus").onclick = () => {
+          if (!document.body.classList.contains("slides")) document.body.classList.add("slides")
+          if (!document.body.classList.contains("editor")) document.body.classList.add("editor")
+        }
+        root.querySelector(".ui-toggle").onclick = () => {
+          document.body.classList.toggle("editor")
+          document.body.classList.toggle("slides")
+        }
+
+        // counters
+        function getWordCount(text) {
+          return (text.match(/\S+/g) || []).length
+        }
+        function getCurrentSlide(total) {
+          if (!slides.clientHeight) return Math.min(total, Math.max(1, +location.hash.slice(1) || 1))
+          return Math.min(total, Math.max(1, Math.round(slides.scrollTop / slides.clientHeight) + 1))
+        }
+        function updateCounts() {
+          const words = getWordCount(editor.value)
+          wordsEl.textContent = `${words} word${words === 1 ? "" : "s"}`
+          const total = Math.max(1, slides.children.length)
+          const current = getCurrentSlide(total)
+          slidesEl.textContent = `${current} / ${total}`
+        }
+        editor.addEventListener("input", updateCounts)
+        slides.addEventListener("scroll", updateCounts)
+        addEventListener("hashchange", updateCounts)
+        new MutationObserver(updateCounts).observe(slides, { childList: true })
+        updateCounts()
+        document.body.classList.add("count-words")
+        document.body.classList.add("count-slides")
+      }
+
+      // --- Addons ---
+      enrich() // wraps a textarea with line numbers + syntax highlighting
+      preview() // splits textarea into slides and renders markdown
+      sync() // bidirectional scroll sync between editor and slides, keyboard slide navigation
+      collab() // enables collaborative editing
+
+      function enrich() {
         const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 
         // Inject styles once
@@ -43,15 +136,17 @@
           const style = document.createElement("style")
           style.id = "enrich-css"
           style.textContent = `
-            .enrich { position: relative; overflow: hidden; min-width: 0; height: 100%; }
+            body:not(.lines) .ln { display: none; }
+            body.lines .enrich > textarea, body.lines .enrich > .hl { padding-left: 60px !important; }
+            .enrich { position: relative; min-width: 0; height: 100%; flex: 1; }
             .enrich > textarea { position: absolute; inset: 0; width: 100% !important; height: 100% !important; color: transparent; caret-color: #dfdfdf; -webkit-text-fill-color: transparent; z-index: 1; background: transparent; }
-            .enrich > .enrich-hl { position: absolute; inset: 0; pointer-events: none; overflow-y: scroll; scrollbar-width: none; padding-bottom: 1lh; }
-            .enrich > .enrich-hl::-webkit-scrollbar { display: none; }
-            .enrich > .enrich-hl > div { min-height: 1lh; }
-            .enrich > .enrich-ln { position: absolute; left: 0; top: 0; bottom: 0; width: 64px; text-align: right; overflow-y: scroll; user-select: none; pointer-events: none; z-index: 2; scrollbar-width: none; background: inherit; padding-bottom: 1lh; }
-            .enrich > .enrich-ln::-webkit-scrollbar { display: none; }
-            .enrich > .enrich-ln > div.ln-active { color: var(--line-number-active); }
-            .enrich > .enrich-ln > div.ln-sep { border-top: 1px solid var(--editor-border); }
+            .enrich > .hl { position: absolute; inset: 0; pointer-events: none; overflow-y: scroll; scrollbar-width: none; padding-bottom: 1lh; }
+            .enrich > .hl::-webkit-scrollbar { display: none; }
+            .enrich > .hl > div { min-height: 1lh; }
+            .enrich > .ln { position: absolute; left: 0; top: 0; bottom: 0; width: 40px; text-align: right; overflow-y: scroll; user-select: none; pointer-events: none; z-index: 2; scrollbar-width: none; background: inherit; padding-bottom: 1lh; }
+            .enrich > .ln::-webkit-scrollbar { display: none; }
+            .enrich > .ln > div.ln-active { color: var(--line-number-active); }
+            .enrich > .ln > div.ln-sep { box-shadow: 0 -1px 0 rgb(255 255 255 / 0.08); }
             .enrich .h { color: #dfdfdf; font-weight: 700; }
             .enrich .code { color: #4ec99e; }
             .enrich .tick { color: #d49575; }
@@ -69,30 +164,28 @@
         const tabSize = cs.tabSize
         const whiteSpace = cs.whiteSpace
         const wordWrap = cs.wordWrap
-        const flex = cs.flex
         const bg = cs.backgroundColor
 
         // Create wrapper, take textarea's place in layout
         const wrap = document.createElement("div")
         wrap.className = "enrich"
-        wrap.style.cssText = `flex:${flex};min-width:0;height:100%;background:${bg}`
+        wrap.style.cssText = `background:${bg}`
         editor.parentNode.insertBefore(wrap, editor)
         wrap.appendChild(editor)
 
-        // Shared style string for text rendering
-        const textCSS = `font:${font};padding:${padding};tab-size:${tabSize};white-space:${whiteSpace};word-wrap:${wordWrap};overflow-wrap:break-word;`
-
         // Highlight overlay
-        const hlEl = document.createElement("div")
-        hlEl.className = "enrich-hl"
-        hlEl.style.cssText = textCSS + `color:var(--editor-text);`
-        wrap.insertBefore(hlEl, editor)
+        const hl = document.createElement("div")
+        hl.tabIndex = -1
+        hl.className = "hl"
+        hl.style.cssText = `font:${font};padding:${padding};tab-size:${tabSize};white-space:${whiteSpace};word-wrap:${wordWrap};overflow-wrap:break-word;color:var(--editor-text);`
+        wrap.insertBefore(hl, editor)
 
         // Line numbers
-        const lnEl = document.createElement("div")
-        lnEl.className = "enrich-ln"
-        lnEl.style.cssText = `font:${font};padding-top:${paddingTop};padding-right:12px;color:var(--line-number);`
-        wrap.insertBefore(lnEl, editor)
+        const ln = document.createElement("div")
+        ln.tabIndex = -1
+        ln.className = "ln"
+        ln.style.cssText = `font:${font};padding-top:${paddingTop};color:var(--line-number);`
+        wrap.insertBefore(ln, editor)
 
         function highlight(text) {
           const lines = text.split("\n"),
@@ -131,7 +224,7 @@
         }
 
         function update() {
-          hlEl.innerHTML = highlight(editor.value)
+          hl.innerHTML = highlight(editor.value)
           linenums()
         }
 
@@ -146,26 +239,27 @@
             secs.push(start)
           })
           const from = secs[activeIdx] ?? 0
-          const to = secs[activeIdx + 1] ?? hlEl.children.length
+          const to = secs[activeIdx + 1] ?? hl.children.length
           let html = ""
-          for (let i = 0; i < hlEl.children.length; i++) {
+          for (let i = 0; i < hl.children.length; i++) {
             const cls = (i >= from && i < to ? " ln-active" : "") + (secs.indexOf(i) > 0 ? " ln-sep" : "")
-            html += `<div style="height:${hlEl.children[i].getBoundingClientRect().height}px"${cls ? ` class="${cls.trim()}"` : ""}>${i + 1}</div>`
+            html += `<div style="height:${hl.children[i].getBoundingClientRect().height}px"${cls ? ` class="${cls.trim()}"` : ""}>${i + 1}</div>`
           }
-          lnEl.innerHTML = html
+          ln.innerHTML = html
         }
 
         editor.addEventListener("input", update)
         editor.addEventListener("scroll", () => {
-          hlEl.scrollTop = editor.scrollTop
-          lnEl.scrollTop = editor.scrollTop
+          hl.scrollTop = editor.scrollTop
+          ln.scrollTop = editor.scrollTop
         })
         addEventListener("hashchange", linenums)
-        update()
+        addEventListener("resize", linenums)
+        requestAnimationFrame(update)
+        document.body.classList.add("lines")
       }
 
-      // preview(editor, slides) — renders markdown into slide DOM, parses sections
-      function preview(editor, slides) {
+      function preview() {
         function toHTML(text) {
           return text
             .replace(/^### (.+)$/gm, "<h3>$1</h3>")
@@ -193,15 +287,18 @@
           slides.sections = sections
         }
 
-        slides.style.display = "block"
-        const enrich = editor.closest(".enrich") || editor
-        enrich.style.flex = `0 0 var(--editor-width)`
         editor.addEventListener("input", render)
         render()
+        const mq = matchMedia("(max-width: 800px)")
+        if (!mq.matches) document.body.classList.add("slides")
+        mq.addEventListener("change", () => {
+          if (!mq.matches) return
+          document.body.classList.remove("slides")
+          document.body.classList.add("editor")
+        })
       }
 
-      // sync(editor, slides) — bidirectional scroll sync between editor and slides, keyboard slide navigation
-      function sync(editor, slides) {
+      function sync() {
         const getHash = () => (+location.hash.slice(1) || 1) - 1
 
         function goTo(idx, { slide = true, text = true, force = false } = {}) {
@@ -213,11 +310,11 @@
           if (text && (force || document.activeElement !== editor)) {
             const sec = slides.sections[idx]
             if (!sec) return
-            const hl = document.querySelector(".enrich-hl")
-            const ln = document.querySelector(".enrich-ln")
+            const hl = document.querySelector(".hl")
+            const ln = document.querySelector(".ln")
             const line = hl?.children[sec.start]
             if (!line) return
-            const top = line.getBoundingClientRect().top - hl.getBoundingClientRect().top + hl.scrollTop
+            const top = line.getBoundingClientRect().top - hl.getBoundingClientRect().top + hl.scrollTop - 15
             editor.scrollTop = top
             if (hl) hl.scrollTop = top
             if (ln) ln.scrollTop = top
@@ -244,7 +341,7 @@
         })
 
         // keyboard slide navigation → hash + both scroll
-        document.addEventListener("keydown", (e) => {
+        addEventListener("keydown", (e) => {
           if (document.activeElement?.tagName === "TEXTAREA") return
           const last = slides.children.length - 1
           if (e.key === "Home" || (e.key === "ArrowUp" && (e.metaKey || e.ctrlKey))) return (e.preventDefault(), goTo(0))
@@ -256,68 +353,7 @@
         goTo(getHash())
       }
 
-      // count(editor, slides) — adds word count, slide count, and slide progress as a single overlay addon
-      function count(editor, slides) {
-        document.getElementById("count-root")?.remove()
-
-        if (!document.getElementById("count-css")) {
-          const style = document.createElement("style")
-          style.id = "count-css"
-          style.textContent = `
-            .count { position: fixed; inset: 0; pointer-events: none; z-index: 4; font: 12px/1 monospace; color: var(--editor-text); }
-            .count-box { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; background: rgba(21,21,22,0.88); }
-            .count-editor,
-            .count-slides { position: fixed; bottom: 12px; width: var(--editor-width); padding: 0 12px; display: flex; justify-content: flex-end; }
-            .count-editor { left: 0; }
-            .count-slides { right: 0; }
-            .count-progress { position: fixed; top: 0; left: var(--editor-width); width: var(--editor-width); height: 1px; background: rgba(255,255,255,0.08); overflow: hidden; }
-            .count-progress > div { width: 0; height: 100%; background: var(--line-number-active); transition: width 120ms ease-out; }
-          `
-          document.head.appendChild(style)
-        }
-
-        const root = document.createElement("div")
-        root.id = "count-root"
-        root.className = "count"
-        root.innerHTML = `
-          <div class="count-editor"><div class="count-box"></div></div>
-          <div class="count-slides"><div class="count-box"></div></div>
-          <div class="count-progress"><div></div></div>
-        `
-        document.body.appendChild(root)
-
-        const wordsEl = root.querySelector(".count-editor .count-box")
-        const slidesEl = root.querySelector(".count-slides .count-box")
-        const progressEl = root.querySelector(".count-progress > div")
-
-        const getWordCount = (text) => (text.match(/\S+/g) || []).length
-
-        function getCurrentSlide(total) {
-          if (!slides.clientHeight) return Math.min(total, Math.max(1, +location.hash.slice(1) || 1))
-          return Math.min(total, Math.max(1, Math.round(slides.scrollTop / slides.clientHeight) + 1))
-        }
-
-        function update() {
-          const total = Math.max(1, slides.children.length)
-          const current = getCurrentSlide(total)
-          const words = getWordCount(editor.value)
-          wordsEl.textContent = `${words} word${words === 1 ? "" : "s"}`
-          slidesEl.textContent = `${current} / ${total}`
-          progressEl.style.width = `${(current / total) * 100}%`
-        }
-
-        editor.addEventListener("input", update)
-        slides.addEventListener("scroll", update)
-        addEventListener("hashchange", update)
-
-        const observer = new MutationObserver(update)
-        observer.observe(slides, { childList: true })
-
-        update()
-      }
-
-      // collab(editor) — real-time collaboration via Yjs + PartyKit
-      function collab(editor) {
+      function collab() {
         const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 
         // --- Styles ---
@@ -325,11 +361,6 @@
           const style = document.createElement("style")
           style.id = "collab-css"
           style.textContent = `
-            .collab-users { position: fixed; top: 8px; right: 8px; display: flex; align-items: center; gap: 4px; z-index: 5; }
-            .collab-dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.3); cursor: pointer; transition: transform 0.1s; }
-            .collab-dot:hover { transform: scale(1.5); }
-            .collab-dot.following { box-shadow: 0 0 0 2px var(--line-number-active); }
-            .collab-count { font: 11px/1 monospace; color: var(--editor-text); margin-left: 2px; }
             .remote-cursor { position: absolute; width: 2px; pointer-events: none; z-index: 3; border-radius: 1px; }
             .remote-cursor-label { position: absolute; top: -18px; left: -1px; color: #fff; font: 600 10px/14px monospace; padding: 1px 6px; border-radius: 3px 3px 3px 0; white-space: nowrap; }
             .remote-selection { position: absolute; pointer-events: none; z-index: 2; opacity: 0.25; }
@@ -343,15 +374,12 @@
         }
 
         // --- DOM ---
-        const usersEl = document.createElement("div")
-        usersEl.className = "collab-users"
-        document.body.appendChild(usersEl)
-
         const cursorsEl = document.createElement("div")
         cursorsEl.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:3;overflow:hidden;"
         ;(editor.closest(".enrich") || editor.parentNode).appendChild(cursorsEl)
 
         const pointersEl = document.createElement("div")
+        pointersEl.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:9998;"
         document.body.appendChild(pointersEl)
 
         // --- Identity ---
@@ -375,7 +403,6 @@
         let Y, ydoc, ytext, awareness
         let knownValue = editor.value
         let ready = false
-        let followId = null
 
         // --- Diff: simple prefix/suffix match ---
         function syncToY() {
@@ -449,25 +476,6 @@
             }
           }
           cursorsEl.innerHTML = html
-          // Follow mode: scroll to followed user's cursor
-          if (followId === null) return
-          const state = states.get(followId)
-          const head = state?.cursor ? resolve(state.cursor.head) : null
-          if (!head) return
-          if (slides.sections) {
-            const line = editor.value.substring(0, head.index).split("\n").length
-            const idx = slides.sections.findLastIndex((s) => line >= s.start + 1)
-            if (idx >= 0) location.hash = idx + 1
-          }
-          const c = getCaretCoords(head.index)
-          if (c.top < editor.scrollTop || c.top > editor.scrollTop + editor.clientHeight - c.height) {
-            const scrollTo = c.top - editor.clientHeight / 2
-            editor.scrollTop = scrollTo
-            const hl = document.querySelector(".enrich-hl"),
-              ln = document.querySelector(".enrich-ln")
-            if (hl) hl.scrollTop = scrollTo
-            if (ln) ln.scrollTop = scrollTo
-          }
         }
 
         // --- Render remote mouse pointers ---
@@ -483,38 +491,6 @@
           }
           pointersEl.innerHTML = html
         }
-
-        // --- Render user dots ---
-        function renderUsers() {
-          if (!awareness) return
-          const states = awareness.getStates()
-          let html = ""
-          for (const [id, state] of states) {
-            if (!state.user) continue
-            const isLocal = id === awareness.clientID
-            html += `<span class="collab-dot${id === followId ? " following" : ""}" style="background:${state.user.color}" title="${esc(state.user.name)}${isLocal ? " (you)" : ""}"${isLocal ? "" : ` data-id="${id}"`}></span>`
-          }
-          if (states.size > 1) html += `<span class="collab-count">${states.size}</span>`
-          usersEl.innerHTML = html
-        }
-
-        // --- Follow mode ---
-        usersEl.addEventListener("click", (e) => {
-          const dot = e.target.closest("[data-id]")
-          if (!dot) return
-          const id = +dot.dataset.id
-          followId = followId === id ? null : id
-          renderUsers()
-          renderCursors()
-        })
-        const stopFollow = () => {
-          if (followId !== null) {
-            followId = null
-            renderUsers()
-          }
-        }
-        editor.addEventListener("keydown", stopFollow)
-        editor.addEventListener("click", stopFollow)
 
         // --- Yjs setup ---
         async function setup() {
@@ -539,7 +515,7 @@
                 seeded = ready = true
                 editor.value = knownValue = peerContent
                 editor.dispatchEvent(new Event("input"))
-                return renderUsers()
+                return
               }
               if (awareness.getStates().size > 1 && ydoc.clientID !== Math.min(...awareness.getStates().keys())) return
               seeded = ready = true
@@ -547,7 +523,6 @@
                 ytext.insert(0, localContent)
                 knownValue = localContent
               }
-              renderUsers()
             }
 
             // Preserve cursor position across remote edits
@@ -576,28 +551,26 @@
             })
 
             // Broadcast cursor + pointer
-            document.addEventListener("selectionchange", () => {
+            addEventListener("selectionchange", () => {
               if (!ytext || document.activeElement !== editor) return
               awareness.setLocalStateField("cursor", {
                 anchor: JSON.stringify(Y.createRelativePositionFromTypeIndex(ytext, editor.selectionStart)),
                 head: JSON.stringify(Y.createRelativePositionFromTypeIndex(ytext, editor.selectionEnd)),
               })
             })
-            document.addEventListener("mousemove", (e) => awareness.setLocalStateField("pointer", { rx: e.clientX / innerWidth, ry: e.clientY / innerHeight }))
-            document.addEventListener("mouseleave", () => awareness.setLocalStateField("pointer", null))
+            addEventListener("mousemove", (e) => awareness.setLocalStateField("pointer", { rx: e.clientX / innerWidth, ry: e.clientY / innerHeight }))
+            addEventListener("mouseleave", () => awareness.setLocalStateField("pointer", null))
 
             // Re-render on any awareness change
             awareness.on("change", () => {
               renderCursors()
               renderPointers()
-              renderUsers()
             })
             editor.addEventListener("scroll", renderCursors)
 
             provider.on("sync", () => setTimeout(initContent, 200))
             provider.on("synced", () => setTimeout(initContent, 200))
             setTimeout(initContent, 1000)
-            renderUsers()
             console.log("[collab] Room:", room)
           } catch (e) {
             console.warn("[collab] Not available:", e.message)

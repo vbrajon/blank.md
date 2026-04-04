@@ -4,7 +4,7 @@ A collaborative markdown editor for slides
 
 ## FEATURES
 
-- [x] Text Editor (line number, syntax highlighting, line/word count\*)
+- [x] Text Editor (line number, syntax highlighting, word count)
 - [x] Preview Slides or Document (theme\*, import/export\*)
 - [x] Collaboration (multi cursor, pointer, follow, comments\*, undo/redo\*)
 
@@ -38,4 +38,5 @@ A collaborative markdown editor for slides
 - https://slatemd.app/
 - https://shiki.style/
 - https://md4x.unjs.io/
+- https://json.pub/
 - https://github.com/badlogic/jot
