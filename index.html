@@ -4,19 +4,47 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>blank.md</title>
+    <base target="_blank" />
     <!-- prettier-ignore -->
     <style>
-      :root { --text: #aaa; --background: #0C1117; --muted: #555; --active: #fd0; }
+      :root { --background: #0C1117; --text: #aaa; --accent: #eee; --muted: #555; --active: #fd0; }
       * { margin: 0; padding: 0; box-sizing: border-box;accent-color: var(--active);caret-color: var(--active); }
       html, body { width: 100%; height: 100%; overflow: hidden; display: flex; font-family: system-ui, sans-serif; background: var(--background); color: var(--text); }
       #editor { flex: 1; min-width: 0; height: 100%; background: transparent; color: var(--text); border: none; outline: none; resize: none; font: 13px/22px monospace; padding: 16px; tab-size: 2; white-space: pre-wrap; word-wrap: break-word; overflow-y: auto; overscroll-behavior: none; }
       #editor::selection { background: rgba(255, 221, 0, 0.25); color: transparent; }
-      #preview { flex: 1; min-width: 0; height: 100%; overflow-y: auto; scroll-snap-type: y mandatory; box-shadow: -1px 0 0 rgb(255 255 255 / 0.08); display: none; }
-      .slide { height: 100%; scroll-snap-align: start; overflow: hidden; display: flex; flex-direction: column; justify-content: center; padding: 2rem 3rem; }
-      .slide h1, .slide h2, .slide h3 { color: #eee; margin-bottom: 0.5em; }
+      #preview { flex: 1; min-width: 0; height: 100%; overflow-y: auto; scroll-snap-type: y mandatory; box-shadow: -1px 0 0 rgb(255 255 255 / 0.08); display: none; background: var(--background); color: var(--text); }
       body:not(.editor) .enrich, body:not(.editor) > #editor { display: none; }
       body.preview #preview { display: block; }
+      #preview { --background: #F7F7F8; --text: #111; --accent: #000; --muted: #555; --active: #39f; }
+      .slide { height: 100%; scroll-snap-align: start; overflow: hidden; display: flex; flex-direction: column; justify-content: center; padding: 2rem 3rem; font-size: clamp(14px, 1.8vw, 24px); }
+      .slide h1 { font-size: clamp(28px, 4vw, 64px); }
+      .slide h2 { font-size: clamp(22px, 3vw, 48px); }
+      .slide h3 { font-size: clamp(18px, 2.4vw, 36px); }
+      .slide h1, .slide h2, .slide h3 { color: var(--accent); }
+      .slide > * + * { margin-top: 1em; }
+      .slide ul, .slide ol { padding-left: 1.4em; }
+      .slide li { margin-top: 0.2em; }
+      .slide li > ul, .slide li > ol { margin-top: 0.15em; }
+      .slide li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1em; }
+      .slide li > input[type="checkbox"] { margin-right: 0.4em; }
+      .slide pre { background: #0C1117; color: #cdd6f4; border-radius: 6px; padding: 0.8em 1em; overflow-x: auto; font: 0.85em/1.6 monospace; position: relative; }
+      .slide pre[filename]::before { content: attr(filename); position: absolute; top: 0; right: 0; padding: 0.2em 0.6em; font: 600 0.75em/1.4 system-ui, sans-serif; color: #888; background: rgba(255,255,255,0.06); border-radius: 0 6px 0 4px; letter-spacing: 0.03em; }
+      .slide pre:not([filename])[language]::before { content: attr(language); position: absolute; top: 0; right: 0; padding: 0.2em 0.6em; font: 600 0.75em/1.4 system-ui, sans-serif; color: #888; background: rgba(255,255,255,0.06); border-radius: 0 6px 0 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+      .slide pre .line.highlight { background: rgba(255,255,255,0.08); margin: 0 -1em; padding: 0 1em; display: inline-block; width: calc(100% + 2em); }
+      .slide pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; color: inherit; }
+      .slide pre code .line { display: block; }
+      .slide code { background: rgba(0,0,0,0.06); padding: 0.15em 0.35em; border-radius: 3px; font-size: 0.88em; }
+      .slide table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
+      .slide th, .slide td { border: 1px solid rgba(0,0,0,0.12); padding: 0.4em 0.7em; text-align: left; }
+      .slide th { background: rgba(0,0,0,0.04); font-weight: 600; }
+      .slide blockquote { border-left: 3px solid var(--active); padding-left: 1em; color: var(--muted); }
+      .slide a { color: var(--active); text-decoration: none; }
+      .slide a:hover { text-decoration: underline; }
+      .slide p { line-height: 1.6; }
+      .slide strong { color: var(--accent); }
     </style>
+    <!-- <script src="https://unpkg.com/cssstudio"></script>
+    <script>CSSStudio.startStudio()</script> -->
   </head>
   <body class="editor">
     <textarea id="editor" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
@@ -42,10 +70,60 @@
         }
       })
 
-      // --- UI ---
-      ui()
+      // --- Basic renderers (instant, no deps) ---
+      const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      // prettier-ignore
+      function highlightBasic(text) {
+        const lines = text.split("\n"), out = []
+        let i = 0, inCode = false
+        while (i < lines.length) {
+          const raw = lines[i]
+          if (raw.startsWith("```")) { inCode = !inCode; out.push(`<div><span style="color:#4ec99e">${esc(raw)}</span></div>`); i++; continue }
+          if (inCode) { out.push(`<div><span style="color:#4ec99e">${esc(raw)}</span></div>`); i++; continue }
+          if (/^#{1,6} /.test(raw)) { out.push(`<div><span style="color:#dfdfdf;font-weight:700">${esc(raw)}</span></div>`); i++; continue }
+          out.push("<div>" + (esc(raw) || " ").replace(/(\*\*[^*]+\*\*)/g, '<span style="color:#dfdfdf;font-weight:700">$1</span>').replace(/(`[^`]+`)/g, '<span style="color:#d49575">$1</span>').replace(/^([-*+]\s)/, '<span style="color:#cf8e8e">$1</span>') + "</div>")
+          i++
+        }
+        return out.join("")
+      }
+      function toHTMLBasic(text) {
+        return text
+          .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+          .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+          .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+          .replace(/^```.*\n([\s\S]*?)^```$/gm, (_, code) => `<pre><code>${code.replace(/</g, "&lt;")}</code></pre>`)
+          .replace(/^\s*[-*+] \[( |x)\] (.+)$/gm, (_, c, t) => `<li style="list-style:none;margin-left:-1.4em"><input type="checkbox" ${c === "x" ? "checked" : ""} disabled style="margin-right:0.4em">${t}</li>`)
+          .replace(/^\s*[-*+] (.+)$/gm, "<li>$1</li>")
+          .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
+          .replace(/`([^`]+)`/g, `<code style="display:contents">$1</code>`)
+          .replace(/_([^_]+)_/g, `<em style="display:contents">$1</em>`)
+          .replace(/\*\*([^*]+)\*\*/g, `<strong style="display:contents">$1</strong>`)
+          .replace(/~~([^~]+)~~/g, `<del style="display:contents">$1</del>`)
+          .replace(/(?:^|\n)(?!<[huplso])((?:[^\n<].*\n?)+)/g, (_, p) => `<p>${p.trim()}</p>`)
+      }
 
-      function ui() {
+      // --- Upgraded renderers (loaded async) ---
+      let highlight = highlightBasic
+      let renderMarkdown = (md) => Promise.resolve(toHTMLBasic(md))
+      const deps = Promise.all([import("https://esm.sh/shiki"), import("https://esm.sh/@comark/html"), import("https://esm.sh/comark/plugins/highlight"), import("https://esm.sh/@shikijs/themes/github-light"), import("https://esm.sh/@shikijs/themes/github-dark"), import("https://esm.sh/@shikijs/langs/javascript"), import("https://esm.sh/@shikijs/langs/typescript"), import("https://esm.sh/@shikijs/langs/python")]).then(async ([shikiMod, comarkHtml, hlMod, gl, gd, js, ts, py]) => {
+        const shiki = await shikiMod.createHighlighter({ themes: ["github-dark"], langs: ["markdown", js.default, ts.default, py.default] })
+        highlight = (text) => {
+          const { tokens } = shiki.codeToTokens(text, { lang: "markdown", theme: "github-dark" })
+          return tokens.map((line) => "<div>" + (line.map((t) => `<span style="color:${t.color}">${esc(t.content)}</span>`).join("") || " ") + "</div>").join("")
+        }
+        const plugin = hlMod.default({ themes: { dark: gd.default }, defaultColor: "dark", languages: [js.default, ts.default, py.default] })
+        renderMarkdown = (md) => comarkHtml.render(md, { plugins: [plugin] })
+        editor.dispatchEvent(new Event("input"))
+      })
+
+      // --- Addons ---
+      await ui() // buttons, indicators, settings
+      await enrich() // wraps a textarea with line numbers + syntax highlighting
+      await split() // splits textarea into preview and renders markdown
+      await sync() // bidirectional scroll sync between editor and preview, keyboard slide navigation
+      await collab() // enables collaborative editing
+
+      async function ui() {
         // settings persistence - restore + watch
         new MutationObserver(() => localStorage.setItem("settings", document.body.className)).observe(document.body, { attributeFilter: ["class"] })
         document.body.className = localStorage.getItem("settings") || document.body.className
@@ -54,13 +132,13 @@
         const style = document.createElement("style")
         style.id = "ui-css"
         style.textContent = `
-          .ui-close, .ui-plus, .ui-toggle, .ui-settings, .ui-count { position: fixed; z-index: 99999; background: rgba(21,21,22,0.88); color: var(--text); border: none; font: 12px/1 monospace; cursor: pointer; touch-action: manipulation; translate: -1px; }
+          .ui-close, .ui-plus, .ui-toggle, .ui-settings, .ui-count { position: fixed; z-index: 99999; background: transparent; color: #aaa; border: none; font: 12px/1 monospace; cursor: pointer; touch-action: manipulation; translate: -1px; }
           .ui-close, .ui-plus, .ui-toggle, .ui-settings { top: 0; right: 0; width: 28px; height: 28px; font-size: 18px; }
           .ui-close-editor { right: 50%; }
           .ui-settings { top: 28px; }
           .ui-dropdown { position: fixed; top: 52px; right: 0; z-index: 100000; background: rgba(21,21,22,0.95); border-radius: 4px; padding: 4px 0; display: none; min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
           .ui-dropdown.open { display: block; }
-          .ui-dropdown label { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; font: 12px/1 monospace; color: var(--text); }
+          .ui-dropdown label { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; font: 12px/1 monospace; color: #aaa; }
           .ui-dropdown label:hover { background: rgba(255,255,255,0.06); }
           .ui-count { bottom: 0; right: 0; padding: 0 10px; min-height: 28px; display: inline-flex; align-items: center; }
           body.editor.preview .ui-count-editor { right: 50%; }
@@ -143,39 +221,24 @@
         document.body.classList.add("count-preview")
       }
 
-      // --- Addons ---
-      enrich() // wraps a textarea with line numbers + syntax highlighting
-      split() // splits textarea into preview and renders markdown
-      sync() // bidirectional scroll sync between editor and preview, keyboard slide navigation
-      collab() // enables collaborative editing
-
-      function enrich() {
-        const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-
-        // Inject styles once
-        if (!document.getElementById("enrich-css")) {
-          const style = document.createElement("style")
-          style.id = "enrich-css"
-          style.textContent = `
-            body:not(.lines) .ln { display: none; }
-            body.lines .enrich > textarea, body.lines .enrich > .hl { padding-left: 60px !important; }
-            .enrich { position: relative; min-width: 0; height: 100%; flex: 1; }
-            .enrich > textarea { position: absolute; inset: 0; width: 100% !important; height: 100% !important; color: transparent; -webkit-text-fill-color: transparent; z-index: 1; background: transparent; }
-            .enrich > .hl { position: absolute; inset: 0; pointer-events: none; overflow-y: scroll; scrollbar-width: none; padding-bottom: 1lh; }
-            .enrich > .hl::-webkit-scrollbar { display: none; }
-            .enrich > .hl > div { min-height: 1lh; }
-            .enrich > .ln { position: absolute; left: 0; top: 0; bottom: 0; width: 40px; text-align: right; overflow-y: scroll; user-select: none; pointer-events: none; z-index: 2; scrollbar-width: none; background: inherit; padding-bottom: 1lh; }
-            .enrich > .ln::-webkit-scrollbar { display: none; }
-            .enrich > .ln > div.ln-active { color: var(--active); }
-            .enrich > .ln > div.ln-sep { box-shadow: 0 -1px 0 rgb(255 255 255 / 0.08); }
-            .enrich .h { color: #dfdfdf; font-weight: 700; }
-            .enrich .code { color: #4ec99e; }
-            .enrich .tick { color: #d49575; }
-            .enrich .bold { color: #dfdfdf; font-weight: 700; }
-            .enrich .bullet { color: #cf8e8e; }
-          `
-          document.head.appendChild(style)
-        }
+      async function enrich() {
+        const style = document.createElement("style")
+        style.id = "enrich-css"
+        style.textContent = `
+          body:not(.lines) .ln { display: none; }
+          body.lines .enrich > textarea, body.lines .enrich > .hl { padding-left: 60px !important; }
+          .enrich { position: relative; min-width: 0; height: 100%; flex: 1; }
+          .enrich > textarea { position: absolute; inset: 0; width: 100% !important; height: 100% !important; color: transparent; -webkit-text-fill-color: transparent; z-index: 1; background: transparent; }
+          .enrich > .hl { position: absolute; inset: 0; pointer-events: none; overflow-y: scroll; scrollbar-width: none; padding-bottom: 1lh; }
+          .enrich > .hl::-webkit-scrollbar { display: none; }
+          .enrich > .hl > div { min-height: 1lh; }
+          .enrich > .ln { position: absolute; left: 0; top: 0; bottom: 0; width: 40px; text-align: right; overflow-y: scroll; user-select: none; pointer-events: none; z-index: 2; scrollbar-width: none; background: inherit; padding-bottom: 1lh; }
+          .enrich > .ln::-webkit-scrollbar { display: none; }
+          .enrich > .ln > div.ln-active { color: var(--active); }
+          .enrich > .ln > div.ln-sep { box-shadow: 0 -1px 0 rgb(255 255 255 / 0.08); }
+          .enrich .hl span { white-space: pre-wrap; }
+        `
+        document.head.appendChild(style)
 
         // Read textarea styles before reparenting
         const cs = getComputedStyle(editor)
@@ -208,44 +271,11 @@
         ln.style.cssText = `font:${font};padding-top:${paddingTop};color:var(--muted);`
         wrap.insertBefore(ln, editor)
 
-        function highlight(text) {
-          const lines = text.split("\n"),
-            out = []
-          let i = 0,
-            inCode = false
-          while (i < lines.length) {
-            const raw = lines[i]
-            if (raw.startsWith("```")) {
-              inCode = !inCode
-              out.push(`<div><span class="code">${esc(raw)}</span></div>`)
-              i++
-              continue
-            }
-            if (inCode) {
-              out.push(`<div><span class="code">${esc(raw)}</span></div>`)
-              i++
-              continue
-            }
-            if (/^#{1,6} /.test(raw)) {
-              out.push(`<div><span class="h">${esc(raw)}</span></div>`)
-              i++
-              continue
-            }
-            out.push(
-              "<div>" +
-                (esc(raw) || " ")
-                  .replace(/(\*\*[^*]+\*\*)/g, '<span class="bold">$1</span>')
-                  .replace(/(`[^`]+`)/g, '<span class="tick">$1</span>')
-                  .replace(/^([-*+]\s)/, '<span class="bullet">$1</span>') +
-                "</div>",
-            )
-            i++
-          }
-          return out.join("")
-        }
-
         function update() {
+          const st = hl.scrollTop
           hl.innerHTML = highlight(editor.value)
+          hl.scrollTop = st
+          ln.scrollTop = st
           linenums()
         }
 
@@ -276,25 +306,12 @@
         })
         addEventListener("hashchange", linenums)
         addEventListener("resize", linenums)
-        requestAnimationFrame(update)
+        update()
         document.body.classList.add("lines")
       }
 
-      function split() {
-        function toHTML(text) {
-          return text
-            .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-            .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-            .replace(/^# (.+)$/gm, "<h1>$1</h1>")
-            .replace(/^```(\w*)\n([\s\S]*?)^```$/gm, (_, lang, code) => `<pre><code>${code.replace(/</g, "&lt;")}</code></pre>`)
-            .replace(/^[-*+] (.+)$/gm, "<li>$1</li>")
-            .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
-            .replace(/`([^`]+)`/g, "<code>$1</code>")
-            .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-            .replace(/(?:^|\n)(?!<[huplso])((?:[^\n<].*\n?)+)/g, (_, p) => `<p>${p.trim()}</p>`)
-        }
-
-        function render() {
+      async function split() {
+        async function render() {
           const text = editor.value
           let line = 0
           const sections = text.split(/\n\n(?=#{1,6} |\d+\. )/).map((chunk, i) => {
@@ -304,12 +321,15 @@
             line += lines.length
             return { start, lines }
           })
-          preview.innerHTML = sections.map((s) => `<div class="slide">${toHTML(s.lines.join("\n"))}</div>`).join("")
+          const results = await Promise.all(sections.map((s) => renderMarkdown(s.lines.join("\n"))))
+          preview.innerHTML = results.map((h) => `<div class="slide">${h}</div>`).join("")
           preview.sections = sections
+          const idx = (+location.hash.slice(1) || 1) - 1
+          preview.children[idx]?.scrollIntoView({ behavior: "instant" })
         }
 
-        editor.addEventListener("input", render)
-        render()
+        editor.addEventListener("input", () => render())
+        await render()
         const mq = matchMedia("(max-width: 800px)")
         if (!mq.matches) document.body.classList.add("preview")
         mq.addEventListener("change", () => {
@@ -319,7 +339,7 @@
         })
       }
 
-      function sync() {
+      async function sync() {
         const getHash = () => (+location.hash.slice(1) || 1) - 1
 
         function goTo(idx, { slide = true, text = true, force = false } = {}) {
@@ -371,28 +391,23 @@
           if (["ArrowUp", "ArrowLeft", "PageUp"].includes(e.key)) return (e.preventDefault(), goTo(Math.max(0, getHash() - 1)))
         })
 
-        goTo(getHash())
+        goTo(getHash(), { force: true })
       }
 
-      function collab() {
-        const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
-
-        // --- Styles ---
-        if (!document.getElementById("collab-css")) {
-          const style = document.createElement("style")
-          style.id = "collab-css"
-          style.textContent = `
-            .remote-cursor { position: absolute; width: 2px; pointer-events: none; z-index: 3; border-radius: 1px; }
-            .remote-cursor-label { position: absolute; top: -18px; left: -1px; color: #fff; font: 600 10px/14px monospace; padding: 1px 6px; border-radius: 3px 3px 3px 0; white-space: nowrap; }
-            .remote-selection { position: absolute; pointer-events: none; z-index: 2; opacity: 0.25; }
-            .remote-pointer { position: fixed; pointer-events: none; z-index: 9999; width: 0; height: 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.05)) drop-shadow(0 8px 26px rgba(0,0,0,0.06)); isolation: isolate; transition: left 60ms ease-out, top 60ms ease-out; }
-            .remote-pointer svg { width: 16px; height: 16px; position: absolute; top: 0; left: 0; }
-            .remote-pointer-bubble { position: absolute; top: 13px; left: 13px; background: currentColor; border-radius: 9999px; padding: 5px 9px; font: 500 13px/1 system-ui, sans-serif; white-space: nowrap; }
-            .remote-pointer-label { opacity: 0.95; filter: invert() grayscale() brightness(1.3) contrast(9000); mix-blend-mode: luminosity; }
-            @supports (color: oklch(from black l c h)) { .remote-pointer-label { opacity: 1; filter: none; mix-blend-mode: normal; color: oklch(from var(--c) clamp(0, (l / .623 - 1) * -infinity, 1) 0 h) !important; } }
-          `
-          document.head.appendChild(style)
-        }
+      async function collab() {
+        const style = document.createElement("style")
+        style.id = "collab-css"
+        style.textContent = `
+          .remote-cursor { position: absolute; width: 2px; pointer-events: none; z-index: 3; border-radius: 1px; }
+          .remote-cursor-label { position: absolute; top: -18px; left: -1px; color: #fff; font: 600 10px/14px monospace; padding: 1px 6px; border-radius: 3px 3px 3px 0; white-space: nowrap; }
+          .remote-selection { position: absolute; pointer-events: none; z-index: 2; opacity: 0.25; }
+          .remote-pointer { position: fixed; pointer-events: none; z-index: 9999; width: 0; height: 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.05)) drop-shadow(0 8px 26px rgba(0,0,0,0.06)); isolation: isolate; transition: left 60ms ease-out, top 60ms ease-out; }
+          .remote-pointer svg { width: 16px; height: 16px; position: absolute; top: 0; left: 0; }
+          .remote-pointer-bubble { position: absolute; top: 13px; left: 13px; background: currentColor; border-radius: 9999px; padding: 5px 9px; font: 500 13px/1 system-ui, sans-serif; white-space: nowrap; }
+          .remote-pointer-label { opacity: 0.95; filter: invert() grayscale() brightness(1.3) contrast(9000); mix-blend-mode: luminosity; }
+          @supports (color: oklch(from black l c h)) { .remote-pointer-label { opacity: 1; filter: none; mix-blend-mode: normal; color: oklch(from var(--c) clamp(0, (l / .623 - 1) * -infinity, 1) 0 h) !important; } }
+        `
+        document.head.appendChild(style)
 
         // --- DOM ---
         const cursorsEl = document.createElement("div")
