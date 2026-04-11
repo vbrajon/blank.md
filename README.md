@@ -10,7 +10,7 @@ A collaborative markdown editor for slides, documents and notebooks.
 
 ## IDEAS
 
-- Plugins (à la slidev)
+- Plugins (à la sli.dev, or pi.dev)
 - Version control (local save, GitHub/GitLab commit integration)
 - AI features (autocomplete, rework, grammar check)
 - 1+ Dictate, AI autocomplete, AI rework, spell check and grammar check, VSCode
@@ -30,6 +30,9 @@ A collaborative markdown editor for slides, documents and notebooks.
 
 - https://sli.dev/
 - https://v0.app/
+- https://figma.com/slides/
+- https://observablehq.com/platform/notebooks
+- https://tiptap.dev/
 - https://diffs.com/
 - https://shiki.style/
 - https://code.storage/docs/
@@ -41,3 +44,9 @@ A collaborative markdown editor for slides, documents and notebooks.
 - https://md4x.unjs.io/
 - https://json.pub/
 - https://github.com/badlogic/jot
+
+## COLLABORATION
+
+- CRDT: yjs / yjs-webrtc / yjs-indexeddb
+- SERVER: cloudflare DO, socket hibernate, TURN / STUN, no storage
+- SECURITY: password or webauthn + PRF, stored in documents

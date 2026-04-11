@@ -7,41 +7,71 @@
     <base target="_blank" />
     <!-- prettier-ignore -->
     <style>
-      :root { --background: #0C1117; --text: #aaa; --accent: #eee; --muted: #555; --active: #fd0; }
+      :root { --background: #FFFFFF; --text: #000000; --muted: #757575; --active: #79B8FF; }
+      #editor, .enrich { --background: #0C1117; --text: #E1E4E8; background: var(--background); color: var(--text); }
       * { margin: 0; padding: 0; box-sizing: border-box;accent-color: var(--active);caret-color: var(--active); }
-      html, body { width: 100%; height: 100%; overflow: hidden; display: flex; font-family: system-ui, sans-serif; background: var(--background); color: var(--text); }
-      #editor { flex: 1; min-width: 0; height: 100%; background: transparent; color: var(--text); border: none; outline: none; resize: none; font: 13px/22px monospace; padding: 16px; tab-size: 2; white-space: pre-wrap; word-wrap: break-word; overflow-y: auto; overscroll-behavior: none; }
-      #editor::selection { background: rgba(255, 221, 0, 0.25); color: transparent; }
-      #preview { flex: 1; min-width: 0; height: 100%; overflow-y: auto; scroll-snap-type: y mandatory; box-shadow: -1px 0 0 rgb(255 255 255 / 0.08); display: none; background: var(--background); color: var(--text); }
-      body:not(.editor) .enrich, body:not(.editor) > #editor { display: none; }
-      body.preview #preview { display: block; }
-      #preview { --background: #F7F7F8; --text: #111; --accent: #000; --muted: #555; --active: #39f; }
-      .slide { height: 100%; scroll-snap-align: start; overflow: hidden; display: flex; flex-direction: column; justify-content: center; padding: 2rem 3rem; font-size: clamp(14px, 1.8vw, 24px); }
-      .slide h1 { font-size: clamp(28px, 4vw, 64px); }
-      .slide h2 { font-size: clamp(22px, 3vw, 48px); }
-      .slide h3 { font-size: clamp(18px, 2.4vw, 36px); }
-      .slide h1, .slide h2, .slide h3 { color: var(--accent); }
-      .slide > * + * { margin-top: 1em; }
-      .slide ul, .slide ol { padding-left: 1.4em; }
-      .slide li { margin-top: 0.2em; }
+      html, body { width: 100%; height: 100%; overflow: hidden; display: flex; font-family: system-ui, sans-serif; }
+      #editor { flex: 1; min-width: 0; height: 100%; border: none; outline: none; resize: none; font: 13px/22px monospace; padding: 16px; tab-size: 2; white-space: pre-wrap; word-wrap: break-word; overflow-y: auto; overscroll-behavior: none; }
+      #preview { flex: 1; min-width: 0; height: 100%; overflow-y: auto; scroll-snap-type: y mandatory; box-shadow: -1px 0 0 rgb(255 255 255 / 0.08); container-type: size; }
+      body:not(.editor) .enrich, body:not(.editor) > #editor, body:not(.preview) #preview { display: none; }
+      @page { size: landscape; margin: 0; }
+      @media print {
+        html, body { overflow: visible; height: auto; display: block; background: white; }
+        #editor, .enrich, #menu-root { display: none !important; }
+        #preview { display: block !important; overflow: visible; height: auto; box-shadow: none; scroll-snap-type: none; container-type: inline-size; }
+        .snap { min-height: auto; page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; background: white; }
+        .snap:last-child { page-break-after: auto; break-after: auto; }
+        .slide { width: 100%; border-radius: 0; box-shadow: none; }
+      }
+      .snap { scroll-snap-align: start; min-height: 100cqh; display: grid; place-items: center; background: #f5f5f5; }
+      .slide { width: min(90cqw, calc(90cqh * 16 / 9)); aspect-ratio: 16 / 9; container-type: inline-size; overflow: hidden; columns: 2; column-gap: 2.5cqi; column-fill: auto; padding: 6.667cqi; font-weight: 400; line-height: 1.4; letter-spacing: -0.004em; background: var(--background); border-radius: 1cqi; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
+      .slide > * { min-width: 0; min-height: 0; font-size: 2cqi; margin-bottom: 2.5cqi; break-inside: avoid; }
+      .slide > :is(h1, h2, h3) { column-span: all; }
+      .slide h1 { font-size: 6cqi; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+      .slide h2 { font-size: 4cqi; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+      .slide h3 { font-size: 3cqi; font-weight: 700; letter-spacing: -0.01em; line-height: 1.4; }
+      .slide img { max-width: 100%; max-height: 100%; height: auto; object-fit: contain; }
+      .slide strong { font-weight: 700; }
+      .slide blockquote { max-width: 52.4cqi; border-left: 3px solid var(--muted); padding-left: 1em; color: var(--muted); font-style: italic; }
+      .slide a { color: var(--active); text-decoration: none; }
+      .slide a:hover { text-decoration: underline; }
+      .slide ul, .slide ol { padding-left: 1.2em; }
+      .slide li { margin-top: 0.35em; }
       .slide li > ul, .slide li > ol { margin-top: 0.15em; }
       .slide li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1em; }
       .slide li > input[type="checkbox"] { margin-right: 0.4em; }
-      .slide pre { background: #0C1117; color: #cdd6f4; border-radius: 6px; padding: 0.8em 1em; overflow-x: auto; font: 0.85em/1.6 monospace; position: relative; }
-      .slide pre[filename]::before { content: attr(filename); position: absolute; top: 0; right: 0; padding: 0.2em 0.6em; font: 600 0.75em/1.4 system-ui, sans-serif; color: #888; background: rgba(255,255,255,0.06); border-radius: 0 6px 0 4px; letter-spacing: 0.03em; }
-      .slide pre:not([filename])[language]::before { content: attr(language); position: absolute; top: 0; right: 0; padding: 0.2em 0.6em; font: 600 0.75em/1.4 system-ui, sans-serif; color: #888; background: rgba(255,255,255,0.06); border-radius: 0 6px 0 4px; text-transform: uppercase; letter-spacing: 0.03em; }
-      .slide pre .line.highlight { background: rgba(255,255,255,0.08); margin: 0 -1em; padding: 0 1em; display: inline-block; width: calc(100% + 2em); }
+      .slide pre { background: #F5F5F5; color: #1A1A1A; border-radius: 4px; padding: 1em 1.2em; overflow-x: auto; font-size: 1.53cqi; font-family: monospace; line-height: 1.7; position: relative; }
+      .slide pre[filename]::before { content: attr(filename); position: absolute; top: 0; right: 0; padding: 0.2em 0.6em; font: 600 0.75em/1.4 system-ui, sans-serif; color: #999; background: rgba(0,0,0,0.04); border-radius: 0 12px 0 6px; letter-spacing: 0.03em; }
+      .slide pre:not([filename])[language]::before { content: attr(language); position: absolute; top: 0; right: 0; padding: 0.2em 0.6em; font: 600 0.75em/1.4 system-ui, sans-serif; color: #999; background: rgba(0,0,0,0.04); border-radius: 0 12px 0 6px; text-transform: uppercase; letter-spacing: 0.03em; }
+      .slide pre .line.highlight { background: rgba(0,0,0,0.05); margin: 0 -1.2em; padding: 0 1.2em; display: inline-block; width: calc(100% + 2.4em); }
       .slide pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; color: inherit; }
       .slide pre code .line { display: block; }
-      .slide code { background: rgba(0,0,0,0.06); padding: 0.15em 0.35em; border-radius: 3px; font-size: 0.88em; }
-      .slide table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
-      .slide th, .slide td { border: 1px solid rgba(0,0,0,0.12); padding: 0.4em 0.7em; text-align: left; }
-      .slide th { background: rgba(0,0,0,0.04); font-weight: 600; }
-      .slide blockquote { border-left: 3px solid var(--active); padding-left: 1em; color: var(--muted); }
-      .slide a { color: var(--active); text-decoration: none; }
-      .slide a:hover { text-decoration: underline; }
-      .slide p { line-height: 1.6; }
-      .slide strong { color: var(--accent); }
+      .slide code { background: rgba(0,0,0,0.05); padding: 0.15em 0.4em; border-radius: 6px; font-size: 88%; }
+      .slide table { border-collapse: collapse; width: 100%; font-size: 1.62cqi; }
+      .slide th, .slide td { border: 1px solid rgba(0,0,0,0.08); padding: 0.5em 0.8em; text-align: left; }
+      .slide th { background: rgba(0,0,0,0.03); font-weight: 600; }
+      /* Slide — Center */
+      .slide.center { columns: unset; display: flex; flex-direction: column; flex-wrap: nowrap; justify-content: center; align-items: center; text-align: center; gap: 1.44cqi; }
+      .slide.center > * { flex: none; margin-bottom: 0; }
+      /* Slide — Cards */
+      .slide.cards { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: auto 1fr; gap: 5.29cqi 3.85cqi; }
+      .slide.cards h2 { grid-column: 1 / -1; }
+      .slide.cards p { background: #cfcfcf; border-radius: 0.96cqi; padding: 2.4cqi 2.88cqi; display: flex; flex-direction: column; justify-content: space-between; font-size: 2.88cqi; font-weight: 700; }
+      /* Slide — Split list */
+      .slide.split { display: grid; grid-template-columns: 33.65cqi 1fr; grid-template-rows: repeat(3, auto); align-content: center; gap: 2.88cqi; }
+      .slide.split h2 { grid-column: 1; grid-row: 1 / 4; align-self: center; }
+      .slide.split p { grid-column: 2; }
+      /* Device Frames */
+      p:has(> .macbook), p:has(> .iphone), p:has(> .android) { position: relative; overflow: hidden; width: fit-content; max-width: 100%; max-height: 100%; }
+      p:has(> .macbook)::after, p:has(> .iphone)::after, p:has(> .android)::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 1; background: center / contain no-repeat; }
+      .macbook, .iphone, .android { width: auto; height: auto; max-width: 100%; object-fit: cover; display: block; -webkit-mask-size: contain; -webkit-mask-repeat: no-repeat; mask-size: contain; mask-repeat: no-repeat; }
+      .slide img, .slide img.macbook, .slide img.iphone, .slide img.android { max-height: 45cqi; }
+      p:has(> .macbook)::after { background-image: url('assets/macbook.png'); }
+      .macbook { aspect-ratio: 1360 / 824; -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1360 824'%3E%3Cpath transform='translate(138,28)' d='M14.4234 0C6.45759 0 0 6.45761 0 14.4235V705.9H1086V14.4234C1086 6.45759 1079.54 0 1071.58 0H612.742C610.867 0 609.348 1.51943 609.348 3.39375V16.1203C609.348 20.3375 605.929 23.7563 601.712 23.7563H484.288C480.071 23.7563 476.652 20.3375 476.652 16.1203V3.39375C476.652 1.51943 475.133 0 473.258 0H14.4234Z' fill='white'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1360 824'%3E%3Cpath transform='translate(138,28)' d='M14.4234 0C6.45759 0 0 6.45761 0 14.4235V705.9H1086V14.4234C1086 6.45759 1079.54 0 1071.58 0H612.742C610.867 0 609.348 1.51943 609.348 3.39375V16.1203C609.348 20.3375 605.929 23.7563 601.712 23.7563H484.288C480.071 23.7563 476.652 20.3375 476.652 16.1203V3.39375C476.652 1.51943 475.133 0 473.258 0H14.4234Z' fill='white'/%3E%3C/svg%3E"); }
+      p:has(> .iphone)::after { background-image: url('assets/iphone.png'); }
+      .iphone { aspect-ratio: 431 / 885; -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 431 885'%3E%3Crect x='16' y='16' width='399' height='853' rx='40' fill='white'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 431 885'%3E%3Crect x='16' y='16' width='399' height='853' rx='40' fill='white'/%3E%3C/svg%3E"); }
+      p:has(> .android)::after { background-image: url('assets/android.png'); }
+      .android { aspect-ratio: 445 / 947; -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 445 947'%3E%3Crect x='14' y='14' width='417' height='919' rx='36' fill='white'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 445 947'%3E%3Crect x='14' y='14' width='417' height='919' rx='36' fill='white'/%3E%3C/svg%3E"); }
     </style>
     <!-- <script src="https://unpkg.com/cssstudio"></script>
     <script>CSSStudio.startStudio()</script> -->
@@ -55,6 +85,18 @@
       // addEventListener("beforeunload", (e) => (e.returnValue = 0))
       const editor = document.getElementById("editor")
       const preview = document.getElementById("preview")
+
+      // --- Hash format: #<slide>.<class1>.<class2>... e.g. #1.preview.count-preview ---
+      const defaults = "editor preview count-words count-preview lines"
+      function parseHash() {
+        const parts = location.hash.slice(1).split(".")
+        const slide = Math.max(1, +parts[0] || 1)
+        const classes = parts.slice(1).filter(Boolean)
+        return { slide, classes }
+      }
+      function setHash(slide) {
+        location.hash = slide
+      }
       editor.value = localStorage.text || (await fetch("/README.md").then((r) => r.text()))
       editor.addEventListener("input", () => (localStorage.text = editor.value))
       addEventListener("keydown", (e) => {
@@ -72,127 +114,141 @@
 
       // --- Basic renderers (instant, no deps) ---
       const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      function splitSections(text) {
+        const parts = text.split(/\n\n/)
+        const chunks = [parts[0]]
+        for (let i = 1; i < parts.length; i++) {
+          const p = parts[i]
+          const m = p.match(/^(\d+)\. /)
+          if (/^#{1,6}[. ]/.test(p) || (m && !p.includes(`\n${+m[1] + 1}. `))) chunks.push(p)
+          else chunks[chunks.length - 1] += "\n\n" + p
+        }
+        let line = 0
+        return chunks.map((chunk, i) => {
+          if (i > 0) line += 1
+          const start = line
+          const first = chunk.split("\n")[0]
+          const cm = first.match(/^(#{1,6})(\.\S+)\s(.*)/)
+          const classes = cm ? cm[2].replace(/\./g, " ").trim() : ""
+          const md = cm ? cm[1] + " " + cm[3] + chunk.slice(first.length) : chunk
+          const lines = chunk.split("\n")
+          line += lines.length
+          return { start, classes, lines, md }
+        })
+      }
       // prettier-ignore
       function highlightBasic(text) {
         const lines = text.split("\n"), out = []
         let i = 0, inCode = false
         while (i < lines.length) {
           const raw = lines[i]
-          if (raw.startsWith("```")) { inCode = !inCode; out.push(`<div><span style="color:#4ec99e">${esc(raw)}</span></div>`); i++; continue }
-          if (inCode) { out.push(`<div><span style="color:#4ec99e">${esc(raw)}</span></div>`); i++; continue }
-          if (/^#{1,6} /.test(raw)) { out.push(`<div><span style="color:#dfdfdf;font-weight:700">${esc(raw)}</span></div>`); i++; continue }
-          out.push("<div>" + (esc(raw) || " ").replace(/(\*\*[^*]+\*\*)/g, '<span style="color:#dfdfdf;font-weight:700">$1</span>').replace(/(`[^`]+`)/g, '<span style="color:#d49575">$1</span>').replace(/^([-*+]\s)/, '<span style="color:#cf8e8e">$1</span>') + "</div>")
+          if (raw.startsWith("```")) { inCode = !inCode; out.push(`<div><span style="color:var(--muted)">${esc(raw)}</span></div>`); i++; continue }
+          if (inCode) { out.push(`<div><span style="color:var(--muted)">${esc(raw)}</span></div>`); i++; continue }
+          if (/^#{1,6}[. ]/.test(raw)) { out.push(`<div><span style="color:var(--active);font-weight:600">${esc(raw)}</span></div>`); i++; continue }
+          if (/^>/.test(raw)) { out.push(`<div><span style="font-style:italic">${esc(raw)}</span></div>`); i++; continue }
+          out.push("<div>" + (esc(raw) || " ").replace(/(\*\*[^*]+\*\*)/g, '<span style="font-weight:600">$1</span>').replace(/(\_[^_]+\_)/g, '<span style="font-style:italic">$1</span>').replace(/(~~[^~]+~~)/g, '<span style="text-decoration:line-through">$1</span>').replace(/(`[^`]+`)/g, '<span style="color:#d49575">$1</span>').replace(/(!?\[.*?\]\(.*?\))/g, '<span style="color:#6eb3f7">$1</span>').replace(/^([-*+]\s)/, '<span style="color:#cf8e8e">$1</span>').replace(/^(\d+\.\s)/, '<span style="color:#cf8e8e">$1</span>') + "</div>")
           i++
         }
         return out.join("")
       }
-      function toHTMLBasic(text) {
+      function renderBasic(text) {
         return text
-          .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-          .replace(/^## (.+)$/gm, "<h2>$1</h2>")
           .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+          .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+          .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+          .replace(/\*\*([^*]+)\*\*/g, `<strong>$1</strong>`)
+          .replace(/_([^_]+)_/g, `<em>$1</em>`)
+          .replace(/~~([^~]+)~~/g, `<del>$1</del>`)
           .replace(/^```.*\n([\s\S]*?)^```$/gm, (_, code) => `<pre><code>${code.replace(/</g, "&lt;")}</code></pre>`)
-          .replace(/^\s*[-*+] \[( |x)\] (.+)$/gm, (_, c, t) => `<li style="list-style:none;margin-left:-1.4em"><input type="checkbox" ${c === "x" ? "checked" : ""} disabled style="margin-right:0.4em">${t}</li>`)
+          .replace(/`([^`]+)`/g, `<code>$1</code>`)
+          .replace(/(^>.*(?:\n>.*)*)/gm, (m) => `<blockquote>${m.replace(/^> ?/gm, "")}</blockquote>`)
+          .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, `<img src="$2" alt="$1">`)
+          .replace(/\[([^\]]+)\]\(([^)]+)\)/g, `<a href="$2">$1</a>`)
+          .replace(/^\s*[-*+] \[( |x)\] (.+)$/gm, (_, c, t) => `<li><input type="checkbox" ${c === "x" ? "checked" : ""} disabled>${t}</li>`)
           .replace(/^\s*[-*+] (.+)$/gm, "<li>$1</li>")
+          .replace(/^\s*\d+\. (.+)$/gm, "<li>$1</li>")
           .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
-          .replace(/`([^`]+)`/g, `<code style="display:contents">$1</code>`)
-          .replace(/_([^_]+)_/g, `<em style="display:contents">$1</em>`)
-          .replace(/\*\*([^*]+)\*\*/g, `<strong style="display:contents">$1</strong>`)
-          .replace(/~~([^~]+)~~/g, `<del style="display:contents">$1</del>`)
+          .replace(/^(<img\b[^>]*>[^\n]*)$/gm, "<p>$1</p>")
           .replace(/(?:^|\n)(?!<[huplso])((?:[^\n<].*\n?)+)/g, (_, p) => `<p>${p.trim()}</p>`)
       }
 
       // --- Upgraded renderers (loaded async) ---
       let highlight = highlightBasic
-      let renderMarkdown = (md) => Promise.resolve(toHTMLBasic(md))
+      let renderMarkdown = renderBasic
       const deps = Promise.all([import("https://esm.sh/shiki"), import("https://esm.sh/@comark/html"), import("https://esm.sh/comark/plugins/highlight"), import("https://esm.sh/@shikijs/themes/github-light"), import("https://esm.sh/@shikijs/themes/github-dark"), import("https://esm.sh/@shikijs/langs/javascript"), import("https://esm.sh/@shikijs/langs/typescript"), import("https://esm.sh/@shikijs/langs/python")]).then(async ([shikiMod, comarkHtml, hlMod, gl, gd, js, ts, py]) => {
         const shiki = await shikiMod.createHighlighter({ themes: ["github-dark"], langs: ["markdown", js.default, ts.default, py.default] })
         highlight = (text) => {
           const { tokens } = shiki.codeToTokens(text, { lang: "markdown", theme: "github-dark" })
-          return tokens.map((line) => "<div>" + (line.map((t) => `<span style="color:${t.color}">${esc(t.content)}</span>`).join("") || " ") + "</div>").join("")
+          return tokens.map((line) => "<div>" + (line.map((t) => `<span style="color:${t.color}${t.fontStyle & 2 ? ";font-weight:600" : ""}${t.fontStyle & 1 ? ";font-style:italic" : ""}${t.fontStyle & 8 ? ";text-decoration:line-through" : ""}">${esc(t.content)}</span>`).join("") || " ") + "</div>").join("")
         }
-        const plugin = hlMod.default({ themes: { dark: gd.default }, defaultColor: "dark", languages: [js.default, ts.default, py.default] })
+        const plugin = hlMod.default({ themes: { light: gl.default }, defaultColor: "light", languages: [js.default, ts.default, py.default] })
         renderMarkdown = (md) => comarkHtml.render(md, { plugins: [plugin] })
         editor.dispatchEvent(new Event("input"))
       })
 
       // --- Addons ---
-      await ui() // buttons, indicators, settings
+      await menu() // context menu settings, indicators
       await enrich() // wraps a textarea with line numbers + syntax highlighting
       await split() // splits textarea into preview and renders markdown
       await sync() // bidirectional scroll sync between editor and preview, keyboard slide navigation
       await collab() // enables collaborative editing
 
-      async function ui() {
-        // settings persistence - restore + watch
+      async function menu() {
+        // settings persistence - URL hash classes > localStorage > defaults
+        const { classes: hashClasses } = parseHash()
+        if (hashClasses.length) document.body.className = hashClasses.join(" ")
+        else document.body.className = localStorage.getItem("settings") || defaults
         new MutationObserver(() => localStorage.setItem("settings", document.body.className)).observe(document.body, { attributeFilter: ["class"] })
-        document.body.className = localStorage.getItem("settings") || document.body.className
         requestAnimationFrame(() => document.querySelectorAll("input[data-class]").forEach((cb) => (cb.checked = document.body.classList.contains(cb.dataset.class))))
 
         const style = document.createElement("style")
-        style.id = "ui-css"
+        style.id = "menu-css"
         style.textContent = `
-          .ui-close, .ui-plus, .ui-toggle, .ui-settings, .ui-count { position: fixed; z-index: 99999; background: transparent; color: #aaa; border: none; font: 12px/1 monospace; cursor: pointer; touch-action: manipulation; translate: -1px; }
-          .ui-close, .ui-plus, .ui-toggle, .ui-settings { top: 0; right: 0; width: 28px; height: 28px; font-size: 18px; }
-          .ui-close-editor { right: 50%; }
-          .ui-settings { top: 28px; }
-          .ui-dropdown { position: fixed; top: 52px; right: 0; z-index: 100000; background: rgba(21,21,22,0.95); border-radius: 4px; padding: 4px 0; display: none; min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-          .ui-dropdown.open { display: block; }
-          .ui-dropdown label { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; font: 12px/1 monospace; color: #aaa; }
-          .ui-dropdown label:hover { background: rgba(255,255,255,0.06); }
-          .ui-count { bottom: 0; right: 0; padding: 0 10px; min-height: 28px; display: inline-flex; align-items: center; }
-          body.editor.preview .ui-count-editor { right: 50%; }
-          body.editor.preview .ui-plus { display: none; }
-          body:not(.count-words) .ui-count-editor { display: none; }
-          body:not(.count-preview) .ui-count-preview { display: none; }
-          body:not(.editor.preview) .ui-close-editor, body:not(.editor.preview) .ui-close-preview { display: none; }
-          body:not(.editor) .ui-close-editor, body:not(.preview) .ui-close-preview { display: none; }
-          body:not(.editor) .ui-count-editor, body:not(.preview) .ui-count-preview { display: none; }
-          @media (max-width: 800px) { .ui-close, .ui-plus { display: none !important; } }
-          @media (min-width: 801px) { .ui-toggle { display: none !important; } }
+          .menu-count { position: fixed; z-index: 99999; background: transparent; color: #aaa; border: none; font: 12px/1 monospace; cursor: pointer; touch-action: manipulation; translate: -1px; }
+          .menu-count { bottom: 0; right: 0; padding: 0 10px; min-height: 28px; display: inline-flex; align-items: center; }
+          body.editor.preview .menu-count-editor { right: 50%; }
+          body:not(.count-words) .menu-count-editor { display: none; }
+          body:not(.count-preview) .menu-count-preview { display: none; }
+          body:not(.editor) .menu-count-editor, body:not(.preview) .menu-count-preview { display: none; }
+          .menu-context { position: fixed; z-index: 100000; background: rgba(21,21,22,0.95); border-radius: 4px; padding: 4px 0; display: none; min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+          .menu-context.open { display: block; }
+          .menu-context label { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; font: 12px/1 monospace; color: #aaa; }
+          .menu-context label:hover { background: rgba(255,255,255,0.06); }
         `
         document.head.appendChild(style)
 
         const root = document.createElement("div")
-        root.id = "ui-root"
+        root.id = "menu-root"
         root.innerHTML = `
-          <button class="ui-close ui-close-editor">✕</button>
-          <button class="ui-close ui-close-preview">✕</button>
-          <button class="ui-plus">+</button>
-          <button class="ui-toggle">⇄</button>
-          <button class="ui-settings">⋮</button>
-          <div class="ui-dropdown">
-            <label><input type="checkbox" data-class="lines" checked> Lines</label>
-            <label><input type="checkbox" data-class="count-words" checked> Word count</label>
-            <label><input type="checkbox" data-class="count-preview" checked> Slide count</label>
+          <div class="menu-context">
+            <label><input type="checkbox" data-class="editor"> Editor</label>
+            <label><input type="checkbox" data-class="preview"> Preview</label>
+            <label><input type="checkbox" data-class="lines"> Lines</label>
+            <label><input type="checkbox" data-class="count-words"> Word count</label>
+            <label><input type="checkbox" data-class="count-preview"> Slide count</label>
           </div>
-          <div class="ui-count ui-count-editor"></div>
-          <div class="ui-count ui-count-preview"></div>
+          <div class="menu-count menu-count-editor"></div>
+          <div class="menu-count menu-count-preview"></div>
         `
         document.body.appendChild(root)
 
-        const wordsEl = root.querySelector(".ui-count-editor")
-        const previewEl = root.querySelector(".ui-count-preview")
+        const wordsEl = root.querySelector(".menu-count-editor")
+        const previewEl = root.querySelector(".menu-count-preview")
 
-        // button events
-        root.querySelector(".ui-close-editor").onclick = () => document.body.classList.remove("editor")
-        root.querySelector(".ui-close-preview").onclick = () => document.body.classList.remove("preview")
-        root.querySelector(".ui-plus").onclick = () => {
-          if (!document.body.classList.contains("preview")) document.body.classList.add("preview")
-          if (!document.body.classList.contains("editor")) document.body.classList.add("editor")
-        }
-        root.querySelector(".ui-toggle").onclick = () => {
-          document.body.classList.toggle("editor")
-          document.body.classList.toggle("preview")
-        }
-
-        // settings dropdown
-        const dropdown = root.querySelector(".ui-dropdown")
-        root.querySelector(".ui-settings").onclick = () => dropdown.classList.toggle("open")
-        document.addEventListener("click", (e) => {
-          if (!e.target.closest(".ui-settings") && !e.target.closest(".ui-dropdown")) dropdown.classList.remove("open")
+        // context menu on right click
+        const contextMenu = root.querySelector(".menu-context")
+        document.addEventListener("contextmenu", (e) => {
+          if (e.shiftKey) return
+          e.preventDefault()
+          contextMenu.style.left = e.clientX + "px"
+          contextMenu.style.top = e.clientY + "px"
+          contextMenu.querySelectorAll("input[data-class]").forEach((cb) => (cb.checked = document.body.classList.contains(cb.dataset.class)))
+          contextMenu.classList.add("open")
         })
-        dropdown.querySelectorAll("input[data-class]").forEach((cb) => {
+        document.addEventListener("click", (e) => {
+          if (!e.target.closest(".menu-context")) contextMenu.classList.remove("open")
+        })
+        contextMenu.querySelectorAll("input[data-class]").forEach((cb) => {
           cb.checked = document.body.classList.contains(cb.dataset.class)
           cb.onchange = () => document.body.classList.toggle(cb.dataset.class, cb.checked)
         })
@@ -202,7 +258,7 @@
           return (text.match(/\S+/g) || []).length
         }
         function getCurrentSlide(total) {
-          if (!preview.clientHeight) return Math.min(total, Math.max(1, +location.hash.slice(1) || 1))
+          if (!preview.clientHeight) return Math.min(total, Math.max(1, parseHash().slide))
           return Math.min(total, Math.max(1, Math.round(preview.scrollTop / preview.clientHeight) + 1))
         }
         function updateCounts() {
@@ -217,8 +273,6 @@
         addEventListener("hashchange", updateCounts)
         new MutationObserver(updateCounts).observe(preview, { childList: true })
         updateCounts()
-        document.body.classList.add("count-words")
-        document.body.classList.add("count-preview")
       }
 
       async function enrich() {
@@ -227,8 +281,8 @@
         style.textContent = `
           body:not(.lines) .ln { display: none; }
           body.lines .enrich > textarea, body.lines .enrich > .hl { padding-left: 60px !important; }
-          .enrich { position: relative; min-width: 0; height: 100%; flex: 1; }
-          .enrich > textarea { position: absolute; inset: 0; width: 100% !important; height: 100% !important; color: transparent; -webkit-text-fill-color: transparent; z-index: 1; background: transparent; }
+          .enrich { position: relative; min-width: 0; height: 100%; flex: 1; background: var(--background); }
+          .enrich > #editor { position: absolute; inset: 0; width: 100% !important; height: 100% !important; color: transparent; -webkit-text-fill-color: transparent; z-index: 1; background: transparent; }
           .enrich > .hl { position: absolute; inset: 0; pointer-events: none; overflow-y: scroll; scrollbar-width: none; padding-bottom: 1lh; }
           .enrich > .hl::-webkit-scrollbar { display: none; }
           .enrich > .hl > div { min-height: 1lh; }
@@ -253,7 +307,6 @@
         // Create wrapper, take textarea's place in layout
         const wrap = document.createElement("div")
         wrap.className = "enrich"
-        wrap.style.cssText = `background:${bg}`
         editor.parentNode.insertBefore(wrap, editor)
         wrap.appendChild(editor)
 
@@ -280,20 +333,14 @@
         }
 
         function linenums() {
-          const secs = [],
-            activeIdx = (+location.hash.slice(1) || 1) - 1
-          let line = 0
-          editor.value.split(/\n\n(?=#{1,6} |\d+\. )/).forEach((chunk, i) => {
-            if (i > 0) line += 1
-            const start = line
-            line += chunk.split("\n").length
-            secs.push(start)
-          })
-          const from = secs[activeIdx] ?? 0
-          const to = secs[activeIdx + 1] ?? hl.children.length
+          const sections = splitSections(editor.value)
+          const activeIdx = parseHash().slide - 1
+          const from = sections[activeIdx]?.start ?? 0
+          const to = sections[activeIdx + 1]?.start ?? hl.children.length
+          const seps = sections.map((s) => s.start)
           let html = ""
           for (let i = 0; i < hl.children.length; i++) {
-            const cls = (i >= from && i < to ? " ln-active" : "") + (secs.indexOf(i) > 0 ? " ln-sep" : "")
+            const cls = (i >= from && i < to ? " ln-active" : "") + (seps.indexOf(i) > 0 ? " ln-sep" : "")
             html += `<div style="height:${hl.children[i].getBoundingClientRect().height}px"${cls ? ` class="${cls.trim()}"` : ""}>${i + 1}</div>`
           }
           ln.innerHTML = html
@@ -307,43 +354,43 @@
         addEventListener("hashchange", linenums)
         addEventListener("resize", linenums)
         update()
-        document.body.classList.add("lines")
       }
 
       async function split() {
         async function render() {
-          const text = editor.value
-          let line = 0
-          const sections = text.split(/\n\n(?=#{1,6} |\d+\. )/).map((chunk, i) => {
-            if (i > 0) line += 1
-            const start = line
-            const lines = chunk.split("\n")
-            line += lines.length
-            return { start, lines }
-          })
-          const results = await Promise.all(sections.map((s) => renderMarkdown(s.lines.join("\n"))))
-          preview.innerHTML = results.map((h) => `<div class="slide">${h}</div>`).join("")
+          const sections = splitSections(editor.value)
+          const results = (await Promise.all(sections.map((s) => renderMarkdown(s.md)))).map((h) => h.replace(/(<img\b[^>]*?)(\/?>)\s*\{\.(\w[\w-]*)\}/g, '$1 class="$3"$2'))
+          preview.innerHTML = results.map((h, i) => `<div class="snap"><div class="slide${sections[i].classes ? " " + sections[i].classes : ""}">${h}</div></div>`).join("")
           preview.sections = sections
-          const idx = (+location.hash.slice(1) || 1) - 1
+          const idx = parseHash().slide - 1
           preview.children[idx]?.scrollIntoView({ behavior: "instant" })
         }
 
         editor.addEventListener("input", () => render())
         await render()
-        const mq = matchMedia("(max-width: 800px)")
-        if (!mq.matches) document.body.classList.add("preview")
-        mq.addEventListener("change", () => {
+        const mq = matchMedia("(max-width: 1000px)")
+        function applyMobileLayout() {
           if (!mq.matches) return
-          document.body.classList.remove("preview")
-          document.body.classList.add("editor")
-        })
+          document.body.classList.remove("lines")
+          document.body.classList.remove("count-words")
+          if (matchMedia("(orientation: portrait)").matches) {
+            document.body.classList.add("editor")
+            document.body.classList.remove("preview")
+          } else {
+            document.body.classList.remove("editor")
+            document.body.classList.add("preview")
+          }
+        }
+        applyMobileLayout()
+        mq.addEventListener("change", applyMobileLayout)
+        matchMedia("(orientation: portrait)").addEventListener("change", applyMobileLayout)
       }
 
       async function sync() {
-        const getHash = () => (+location.hash.slice(1) || 1) - 1
+        const getHash = () => parseHash().slide - 1
 
         function goTo(idx, { slide = true, text = true, force = false } = {}) {
-          location.hash = idx + 1
+          setHash(idx + 1)
           if (slide) {
             skipScroll = true
             preview.children[idx]?.scrollIntoView({ behavior: "instant" })
