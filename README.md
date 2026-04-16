@@ -29,6 +29,7 @@ A collaborative markdown editor for slides, documents and notebooks.
 ## INSPIRATION
 
 - https://sli.dev/
+- https://pi.dev/
 - https://v0.app/
 - https://figma.com/slides/
 - https://observablehq.com/platform/notebooks

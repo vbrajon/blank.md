@@ -1,0 +1,15 @@
+name = "relay"
+main = "src/index.ts"
+compatibility_date = "2025-04-14"
+
+[durable_objects]
+bindings = [
+  { name = "RELAY", class_name = "Relay" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Relay"]
+
+# Optional: set via `wrangler secret put TURN_KEY_ID` and `wrangler secret put TURN_KEY_TOKEN`
+# If not set, /ice returns public STUN only

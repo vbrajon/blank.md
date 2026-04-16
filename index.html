@@ -14,10 +14,13 @@
       #editor { flex: 1; min-width: 0; height: 100%; border: none; outline: none; resize: none; font: 13px/22px monospace; padding: 16px; tab-size: 2; white-space: pre-wrap; word-wrap: break-word; overflow-y: auto; overscroll-behavior: none; }
       #preview { flex: 1; min-width: 0; height: 100%; overflow-y: auto; scroll-snap-type: y mandatory; box-shadow: -1px 0 0 rgb(255 255 255 / 0.08); container-type: size; }
       body:not(.editor) .enrich, body:not(.editor) > #editor, body:not(.preview) #preview { display: none; }
+      body.fullscreen #sidebar, body.fullscreen .enrich, body.fullscreen #menu-root { display: none !important; }
+      body.fullscreen #preview { position: fixed; inset: 0; z-index: 100000; box-shadow: none; }
+      body.fullscreen { overflow: hidden; }
       @page { size: landscape; margin: 0; }
       @media print {
         html, body { overflow: visible; height: auto; display: block; background: white; }
-        #editor, .enrich, #menu-root { display: none !important; }
+        #editor, .enrich, #menu-root, #sidebar { display: none !important; }
         #preview { display: block !important; overflow: visible; height: auto; box-shadow: none; scroll-snap-type: none; container-type: inline-size; }
         .snap { min-height: auto; page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; background: white; }
         .snap:last-child { page-break-after: auto; break-after: auto; }
@@ -73,8 +76,6 @@
       p:has(> .android)::after { background-image: url('assets/android.png'); }
       .android { aspect-ratio: 445 / 947; -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 445 947'%3E%3Crect x='14' y='14' width='417' height='919' rx='36' fill='white'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 445 947'%3E%3Crect x='14' y='14' width='417' height='919' rx='36' fill='white'/%3E%3C/svg%3E"); }
     </style>
-    <!-- <script src="https://unpkg.com/cssstudio"></script>
-    <script>CSSStudio.startStudio()</script> -->
   </head>
   <body class="editor">
     <textarea id="editor" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
@@ -87,7 +88,7 @@
       const preview = document.getElementById("preview")
 
       // --- Hash format: #<slide>.<class1>.<class2>... e.g. #1.preview.count-preview ---
-      const defaults = "editor preview count-words count-preview lines"
+      const defaults = "editor preview collab count-words count-preview lines"
       function parseHash() {
         const parts = location.hash.slice(1).split(".")
         const slide = Math.max(1, +parts[0] || 1)
@@ -191,19 +192,93 @@
       await enrich() // wraps a textarea with line numbers + syntax highlighting
       await split() // splits textarea into preview and renders markdown
       await sync() // bidirectional scroll sync between editor and preview, keyboard slide navigation
-      await collab() // enables collaborative editing
+      await collab() // collaboration, cursor presence, live editing, media
+
+      // Fullscreen: use native Fullscreen API with class sync
+      new MutationObserver(() => {
+        const want = document.body.classList.contains("fullscreen")
+        const is = !!document.fullscreenElement
+        if (want && !is && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {})
+        if (!want && is) document.exitFullscreen().catch(() => {})
+      }).observe(document.body, { attributeFilter: ["class"] })
+      document.addEventListener("fullscreenchange", () => {
+        document.body.classList.toggle("fullscreen", !!document.fullscreenElement)
+      })
+
+      // File drop: drop a .md file to restore editor content
+      const dropOverlay = document.createElement("div")
+      dropOverlay.className = "drop-overlay"
+      dropOverlay.innerHTML = "<span>Drop .md file to restore</span>"
+      document.body.appendChild(dropOverlay)
+      let dragCounter = 0
+      addEventListener("dragenter", (e) => {
+        e.preventDefault()
+        dragCounter++
+        dropOverlay.classList.add("active")
+      })
+      addEventListener("dragleave", (e) => {
+        e.preventDefault()
+        if (--dragCounter <= 0) {
+          dragCounter = 0
+          dropOverlay.classList.remove("active")
+        }
+      })
+      addEventListener("dragover", (e) => e.preventDefault())
+      addEventListener("drop", (e) => {
+        e.preventDefault()
+        dragCounter = 0
+        dropOverlay.classList.remove("active")
+        const file = [...(e.dataTransfer?.files || [])].find((f) => f.name.endsWith(".md") || f.type === "text/markdown" || f.type === "text/plain")
+        if (!file) return
+        file.text().then((text) => {
+          editor.value = text
+          editor.dispatchEvent(new Event("input"))
+        })
+      })
 
       async function menu() {
         // settings persistence - URL hash classes > localStorage > defaults
+        const volatileClasses = new Set(["collab-mic", "collab-cam", "collab-screen"])
+        const sanitizeSettings = (className) =>
+          String(className || "")
+            .split(/\s+/)
+            .filter(Boolean)
+            .filter((c) => !volatileClasses.has(c))
+            .join(" ")
         const { classes: hashClasses } = parseHash()
-        if (hashClasses.length) document.body.className = hashClasses.join(" ")
-        else document.body.className = localStorage.getItem("settings") || defaults
-        new MutationObserver(() => localStorage.setItem("settings", document.body.className)).observe(document.body, { attributeFilter: ["class"] })
-        requestAnimationFrame(() => document.querySelectorAll("input[data-class]").forEach((cb) => (cb.checked = document.body.classList.contains(cb.dataset.class))))
+        if (hashClasses.length) document.body.className = sanitizeSettings(hashClasses.join(" "))
+        else document.body.className = sanitizeSettings(localStorage.getItem("settings") || defaults)
+        new MutationObserver(() => localStorage.setItem("settings", sanitizeSettings(document.body.className))).observe(document.body, { attributeFilter: ["class"] })
 
         const style = document.createElement("style")
         style.id = "menu-css"
         style.textContent = `
+          #sidebar { width: 40px; height: 100%; flex-shrink: 0; background: #0C1117; display: flex; flex-direction: column; align-items: center; padding: 8px 0; gap: 2px; box-shadow: 1px 0 0 rgb(255 255 255 / 0.08); z-index: 10; user-select: none; }
+          #sidebar .sb-section { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; }
+          #sidebar .sb-section + .sb-section { border-top: 1px solid rgb(255 255 255 / 0.08); }
+          #sidebar .sb-icon { width: 32px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 4px; cursor: pointer; color: #555; transition: color 0.15s, background 0.15s; }
+          #sidebar .sb-icon:hover { background: rgb(255 255 255 / 0.06); color: #999; }
+          #sidebar .sb-icon.active { color: var(--active); }
+          #sidebar .sb-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+          #sidebar .sb-feat { width: 28px; height: 20px; display: flex; align-items: center; justify-content: center; border-radius: 3px; cursor: pointer; font: 600 10px/1 monospace; color: #444; transition: color 0.15s, background 0.15s; }
+          #sidebar .sb-feat:hover { background: rgb(255 255 255 / 0.06); color: #888; }
+          #sidebar .sb-feat.active { color: var(--active); }
+          #sidebar .sb-spacer { flex: 1; }
+          .collab-media { position: fixed; bottom: 8px; right: 8px; display: flex; gap: 12px; z-index: 99999; align-items: flex-end; justify-content: flex-end; flex-wrap: wrap-reverse; max-width: calc(100% - 100px); }
+          .collab-media .video-wrapper { position: relative; display: inline-block; }
+          .collab-media video, .collab-media audio { width: 180px; height: 135px; border-radius: 8px; background: #000; object-fit: cover; flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: block; }
+          .collab-media .local-video { position: relative; width: 180px; height: 135px; border-radius: 8px; z-index: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: block; }
+          .collab-media .screen-share { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 100000; border-radius: 0; object-fit: contain; background: #000; }
+          .collab-media .video-label { position: absolute; bottom: 4px; left: 4px; padding: 2px 6px; background: currentColor; color: #000; border-radius: 3px; font: 600 11px/1 monospace; z-index: 1; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+            .collab-media .audio-badge { position: relative; width: 56px; height: 56px; border-radius: 999px; display: grid; place-items: center; font: 700 10px/1 monospace; color: #ddd; background: #111; }
+            .collab-media .video-label.mic-active { animation: pulse-badge 0.6s ease-in-out infinite; }
+            .collab-media .audio-badge.mic-active { animation: pulse-badge 0.6s ease-in-out infinite; }
+            @keyframes pulse-badge { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
+          .collab-media .video-wrapper.audio-only .video-label { bottom: -20px; left: 50%; transform: translateX(-50%); }
+          body:not(.collab) .collab-media { display: none; }
+          .drop-overlay { position: fixed; inset: 0; z-index: 200000; background: rgba(12,17,23,0.9); display: none; align-items: center; justify-content: center; }
+          .drop-overlay.active { display: flex; }
+          .drop-overlay span { font: 600 24px/1 system-ui, sans-serif; color: var(--active); pointer-events: none; }
           .menu-count { position: fixed; z-index: 99999; background: transparent; color: #aaa; border: none; font: 12px/1 monospace; cursor: pointer; touch-action: manipulation; translate: -1px; }
           .menu-count { bottom: 0; right: 0; padding: 0 10px; min-height: 28px; display: inline-flex; align-items: center; }
           body.editor.preview .menu-count-editor { right: 50%; }
@@ -217,15 +292,49 @@
         `
         document.head.appendChild(style)
 
+        const sidebar = document.createElement("nav")
+        sidebar.id = "sidebar"
+        sidebar.innerHTML = `
+          <div class="sb-section">
+            <div class="sb-icon" data-class="editor" title="Editor"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+            <div class="sb-feat" data-class="lines" title="Line numbers">L</div>
+            <div class="sb-feat" data-class="count-words" title="Word count">W</div>
+          </div>
+          <div class="sb-section">
+            <div class="sb-icon" data-class="preview" title="Preview"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
+            <div class="sb-feat" data-class="count-preview" title="Slide count">S</div>
+            <div class="sb-feat" data-class="fullscreen" title="Fullscreen">F</div>
+          </div>
+          <div class="sb-section">
+            <div class="sb-icon" data-class="collab" title="Collaboration"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+            <div class="sb-feat" data-class="collab-mic" title="Microphone">M</div>
+            <div class="sb-feat" data-class="collab-cam" title="Camera">C</div>
+            <div class="sb-feat" data-class="collab-screen" title="Screen share">D</div>
+          </div>
+        `
+        document.body.insertBefore(sidebar, document.body.firstChild)
+
+        function syncAll() {
+          sidebar.querySelectorAll("[data-class]").forEach((el) => el.classList.toggle("active", document.body.classList.contains(el.dataset.class)))
+          document.querySelectorAll("input[data-class]").forEach((cb) => (cb.checked = document.body.classList.contains(cb.dataset.class)))
+        }
+        new MutationObserver(syncAll).observe(document.body, { attributeFilter: ["class"] })
+        sidebar.querySelectorAll("[data-class]").forEach((el) => {
+          el.addEventListener("click", () => document.body.classList.toggle(el.dataset.class))
+        })
+        syncAll()
+
         const root = document.createElement("div")
         root.id = "menu-root"
         root.innerHTML = `
           <div class="menu-context">
             <label><input type="checkbox" data-class="editor"> Editor</label>
             <label><input type="checkbox" data-class="preview"> Preview</label>
+            <label><input type="checkbox" data-class="fullscreen"> Fullscreen</label>
             <label><input type="checkbox" data-class="lines"> Lines</label>
             <label><input type="checkbox" data-class="count-words"> Word count</label>
             <label><input type="checkbox" data-class="count-preview"> Slide count</label>
+            <label><input type="checkbox" data-class="collab"> Collaboration</label>
           </div>
           <div class="menu-count menu-count-editor"></div>
           <div class="menu-count menu-count-preview"></div>
@@ -373,7 +482,8 @@
           if (!mq.matches) return
           document.body.classList.remove("lines")
           document.body.classList.remove("count-words")
-          if (matchMedia("(orientation: portrait)").matches) {
+          const portrait = screen.orientation ? screen.orientation.type.startsWith("portrait") : innerWidth < innerHeight
+          if (portrait) {
             document.body.classList.add("editor")
             document.body.classList.remove("preview")
           } else {
@@ -383,7 +493,7 @@
         }
         applyMobileLayout()
         mq.addEventListener("change", applyMobileLayout)
-        matchMedia("(orientation: portrait)").addEventListener("change", applyMobileLayout)
+        screen.orientation?.addEventListener("change", applyMobileLayout)
       }
 
       async function sync() {
@@ -465,6 +575,10 @@
         pointersEl.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:9998;"
         document.body.appendChild(pointersEl)
 
+        const mediaEl = document.createElement("div")
+        mediaEl.className = "collab-media"
+        document.body.appendChild(mediaEl)
+
         // --- Identity ---
         const identities = [
           { name: "Yellow", color: "#fd0" },
@@ -483,9 +597,10 @@
         }
 
         // --- State ---
-        let Y, ydoc, ytext, awareness
+        let Y, ydoc, ytext, awareness, provider
         let knownValue = editor.value
         let ready = false
+        const listeners = []
 
         // --- Diff: simple prefix/suffix match ---
         function syncToY() {
@@ -575,21 +690,27 @@
           pointersEl.innerHTML = html
         }
 
-        // --- Yjs setup ---
+        // --- y-webrtc setup ---
         async function setup() {
           try {
-            Y = await import("https://esm.sh/yjs@13")
-            const { default: YPartyKitProvider } = await import("https://esm.sh/y-partykit@0/provider")
+            const [yMod, { WebrtcProvider }, { Awareness }] = await Promise.all([import("https://esm.sh/yjs@13"), import("https://esm.sh/y-webrtc@10"), import("https://esm.sh/y-protocols@1/awareness")])
+            Y = yMod
 
             ydoc = new Y.Doc()
             ytext = ydoc.getText("markdown")
-            const room = "blank-md-" + location.host + location.pathname.replace(/[^a-z0-9]/gi, "-")
-            const provider = new YPartyKitProvider("blank-md.vbrajon.partykit.dev", room, ydoc)
-            awareness = provider.awareness
+            const room = location.host
+
+            awareness = new Awareness(ydoc)
             awareness.setLocalStateField("user", user)
 
-            // Seed content: use peer content if available, else local content (lowest clientID wins)
-            const localContent = editor.value
+            provider = new WebrtcProvider(room, ydoc, {
+              signaling: ["wss://relay.vbrajon.workers.dev/signal"],
+              awareness,
+              maxConns: 30,
+              filterBcConns: true,
+            })
+
+            // Seed content: first peer seeds, others get it via WebRTC sync
             let seeded = false
             function initContent() {
               if (seeded) return
@@ -600,13 +721,33 @@
                 editor.dispatchEvent(new Event("input"))
                 return
               }
-              if (awareness.getStates().size > 1 && ydoc.clientID !== Math.min(...awareness.getStates().keys())) return
+              // Lowest clientID wins for initial seeding
+              const clients = [...awareness.getStates().keys()]
+              if (clients.length > 1 && ydoc.clientID !== Math.min(...clients)) return
               seeded = ready = true
-              if (localContent) {
-                ytext.insert(0, localContent)
-                knownValue = localContent
+              if (editor.value) {
+                ytext.insert(0, editor.value)
+                knownValue = editor.value
               }
             }
+
+            provider.on("synced", () => setTimeout(initContent, 200))
+            setTimeout(initContent, 1500)
+
+            // Undo manager
+            const undoManager = new Y.UndoManager(ytext, { trackedOrigins: new Set([null]) })
+            const onKeyUndo = (e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
+                e.preventDefault()
+                undoManager.undo()
+              }
+              if ((e.metaKey || e.ctrlKey) && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+                e.preventDefault()
+                undoManager.redo()
+              }
+            }
+            addEventListener("keydown", onKeyUndo)
+            listeners.push(() => removeEventListener("keydown", onKeyUndo))
 
             // Preserve cursor position across remote edits
             let relStart, relEnd
@@ -633,35 +774,590 @@
               renderCursors()
             })
 
-            // Broadcast cursor + pointer
-            addEventListener("selectionchange", () => {
+            // Broadcast cursor + pointer via awareness
+            const onSelection = () => {
               if (!ytext || document.activeElement !== editor) return
               awareness.setLocalStateField("cursor", {
                 anchor: JSON.stringify(Y.createRelativePositionFromTypeIndex(ytext, editor.selectionStart)),
                 head: JSON.stringify(Y.createRelativePositionFromTypeIndex(ytext, editor.selectionEnd)),
               })
-            })
-            addEventListener("mousemove", (e) => awareness.setLocalStateField("pointer", { rx: e.clientX / innerWidth, ry: e.clientY / innerHeight }))
-            addEventListener("mouseleave", () => awareness.setLocalStateField("pointer", null))
+            }
+            const onMouseMove = (e) => awareness.setLocalStateField("pointer", { rx: e.clientX / innerWidth, ry: e.clientY / innerHeight })
+            const onMouseLeave = () => awareness.setLocalStateField("pointer", null)
+            addEventListener("selectionchange", onSelection)
+            addEventListener("mousemove", onMouseMove)
+            addEventListener("mouseleave", onMouseLeave)
+            listeners.push(() => removeEventListener("selectionchange", onSelection))
+            listeners.push(() => removeEventListener("mousemove", onMouseMove))
+            listeners.push(() => removeEventListener("mouseleave", onMouseLeave))
 
-            // Re-render on any awareness change
+            // Re-render on any awareness change + clean up disconnected media peers
             awareness.on("change", () => {
               renderCursors()
               renderPointers()
+              for (const [pid] of mediaConns) {
+                if (!awareness.getStates().has(pid)) {
+                  mediaConns.get(pid)?.close()
+                  mediaConns.delete(pid)
+                  removeRemoteMedia(pid)
+                }
+              }
+              for (const pid of [...remoteTiles.keys()]) {
+                if (!awareness.getStates().has(pid)) removeRemoteMedia(pid)
+                else updateRemoteTileVisual(pid)
+              }
+              updateLocalTileVisual()
             })
             editor.addEventListener("scroll", renderCursors)
+            listeners.push(() => editor.removeEventListener("scroll", renderCursors))
 
-            provider.on("sync", () => setTimeout(initContent, 200))
-            provider.on("synced", () => setTimeout(initContent, 200))
-            setTimeout(initContent, 1000)
-            console.log("[collab] Room:", room)
+            console.log("[collab] WebRTC room:", room)
+            await initMedia()
           } catch (e) {
             console.warn("[collab] Not available:", e.message)
           }
         }
 
+        function teardown() {
+          stopMedia("collab-mic")
+          stopMedia("collab-cam")
+          stopMedia("collab-screen")
+          stopLocalVoiceMeter()
+          removeLocalTile()
+          destroyAllMediaConns()
+          document.body.classList.remove("collab-mic", "collab-cam", "collab-screen")
+          listeners.forEach((fn) => fn())
+          listeners.length = 0
+          if (provider) {
+            provider.destroy()
+            provider = null
+          }
+          if (ydoc) {
+            ydoc.destroy()
+            ydoc = null
+          }
+          ytext = null
+          awareness = null
+          ready = false
+          cursorsEl.innerHTML = ""
+          pointersEl.innerHTML = ""
+          console.log("[collab] Disconnected")
+        }
+
+        // --- Media sharing via native WebRTC ---
+        const mediaStreams = {}
+        const mediaConns = new Map() // peerId → RTCPeerConnection
+        const remoteTiles = new Map() // peerId → { wrapper, label, videoEl, audioEl, badgeEl }
+        let localTile = null // { wrapper, label, videoEl, badgeEl }
+        let localVoiceCtx = null
+        let localVoiceAnalyser = null
+        let localVoiceSource = null
+        let localVoiceData = null
+        let localVoiceInterval = null
+        const VOICE_LOUD_DB = -35
+        let mediaWs
+        let iceServers = [{ urls: ["stun:stun.cloudflare.com:3478"] }]
+
+        let mediaPingInterval
+        let mediaWsIntentionallyClosed = false
+        let localVoiceLoud = false
+
+        function computeDbFromTimeDomain(floatArray) {
+          let sum = 0
+          for (let i = 0; i < floatArray.length; i++) sum += floatArray[i] * floatArray[i]
+          const rms = Math.sqrt(sum / floatArray.length)
+          if (!rms) return -100
+          return Math.max(-100, Math.min(0, 20 * Math.log10(rms)))
+        }
+
+        function updateLocalVoiceVisual(isLoud) {
+          localVoiceLoud = isLoud
+          const labels = mediaEl.querySelectorAll('.video-wrapper[data-local="1"] .video-label')
+          const badges = mediaEl.querySelectorAll('.video-wrapper[data-local="1"] .audio-badge')
+          labels.forEach((el) => el.classList.toggle("mic-active", isLoud))
+          badges.forEach((el) => el.classList.toggle("mic-active", isLoud))
+        }
+
+        function stopLocalVoiceMeter() {
+          if (localVoiceInterval) {
+            clearInterval(localVoiceInterval)
+            localVoiceInterval = null
+          }
+          localVoiceSource?.disconnect?.()
+          localVoiceAnalyser?.disconnect?.()
+          if (localVoiceCtx?.state !== "closed") localVoiceCtx?.close?.()
+          localVoiceSource = null
+          localVoiceAnalyser = null
+          localVoiceCtx = null
+          localVoiceData = null
+          awareness?.setLocalStateField("voice", null)
+          updateLocalVoiceVisual(false)
+        }
+
+        function startLocalVoiceMeter(stream) {
+          stopLocalVoiceMeter()
+          try {
+            const Ctx = window.AudioContext || window.webkitAudioContext
+            if (!Ctx) return
+            localVoiceCtx = new Ctx()
+            localVoiceCtx.resume().catch(() => {})
+            localVoiceSource = localVoiceCtx.createMediaStreamSource(stream)
+            localVoiceAnalyser = localVoiceCtx.createAnalyser()
+            localVoiceAnalyser.fftSize = 1024
+            localVoiceData = new Float32Array(localVoiceAnalyser.fftSize)
+            localVoiceSource.connect(localVoiceAnalyser)
+            localVoiceInterval = setInterval(() => {
+              if (!localVoiceAnalyser || !awareness) return
+              if (localVoiceCtx?.state !== "running") {
+                localVoiceCtx?.resume?.().catch(() => {})
+                return
+              }
+              localVoiceAnalyser.getFloatTimeDomainData(localVoiceData)
+              const db = computeDbFromTimeDomain(localVoiceData)
+              const loud = db > VOICE_LOUD_DB
+              awareness.setLocalStateField("voice", { db: Math.round(db), loud })
+              updateLocalVoiceVisual(loud)
+            }, 120)
+          } catch {
+            awareness?.setLocalStateField("voice", null)
+          }
+        }
+
+        function renderMediaOrder() {
+          const wrappers = Array.from(mediaEl.querySelectorAll(".video-wrapper"))
+          wrappers.sort((a, b) => Number(a.dataset.peerId ?? Infinity) - Number(b.dataset.peerId ?? Infinity))
+          wrappers.forEach((w) => mediaEl.appendChild(w))
+        }
+
+        function getPeerState(peerId) {
+          return awareness?.getStates().get(peerId) || null
+        }
+
+        function getPeerMedia(peerId) {
+          return getPeerState(peerId)?.media || []
+        }
+
+        function ensureLocalTile() {
+          if (!ydoc) return null
+          if (localTile) return localTile
+
+          const wrapper = document.createElement("div")
+          wrapper.className = "video-wrapper"
+          wrapper.dataset.local = "1"
+          wrapper.dataset.peerId = String(ydoc.clientID)
+
+          const label = document.createElement("div")
+          label.className = "video-label"
+          label.textContent = user.name
+          label.style.backgroundColor = user.color
+          wrapper.appendChild(label)
+
+          localTile = { wrapper, label, videoEl: null, badgeEl: null }
+          mediaEl.appendChild(wrapper)
+          renderMediaOrder()
+          return localTile
+        }
+
+        function removeLocalTile() {
+          if (!localTile) return
+          localTile.videoEl?.pause?.()
+          localTile.wrapper.remove()
+          localTile = null
+        }
+
+        function updateLocalTileVisual() {
+          if (!ydoc) return
+          const hasCam = !!mediaStreams["collab-cam"] || !!mediaStreams["collab-screen"]
+          const hasMic = !!mediaStreams["collab-mic"]
+          if (!hasCam && !hasMic) {
+            removeLocalTile()
+            return
+          }
+
+          const tile = ensureLocalTile()
+          if (!tile) return
+          tile.label.textContent = user.name
+          tile.label.style.backgroundColor = user.color
+
+          if (hasCam) {
+            const source = mediaStreams["collab-screen"] || mediaStreams["collab-cam"]
+            if (!tile.videoEl) {
+              const video = document.createElement("video")
+              video.dataset.media = "collab-local-video"
+              video.className = mediaStreams["collab-screen"] ? "screen-share" : "local-video"
+              video.autoplay = true
+              video.muted = true
+              video.playsInline = true
+              tile.wrapper.insertBefore(video, tile.label)
+              tile.videoEl = video
+            }
+            tile.videoEl.className = mediaStreams["collab-screen"] ? "screen-share" : "local-video"
+            if (tile.videoEl.srcObject !== source) tile.videoEl.srcObject = source
+            tile.videoEl.play().catch(() => {})
+          } else if (tile.videoEl) {
+            tile.videoEl.remove()
+            tile.videoEl = null
+          }
+
+          const showBadge = hasMic && !hasCam
+          if (showBadge && !tile.badgeEl) {
+            const badge = document.createElement("div")
+            badge.className = "audio-badge"
+            badge.textContent = "MIC"
+            badge.style.border = `2px solid ${user.color}`
+            badge.classList.toggle("mic-active", localVoiceLoud)
+            tile.wrapper.insertBefore(badge, tile.label)
+            tile.badgeEl = badge
+          }
+          if (!showBadge && tile.badgeEl) {
+            tile.badgeEl.remove()
+            tile.badgeEl = null
+          }
+
+          tile.label.classList.toggle("mic-active", hasMic && localVoiceLoud)
+          tile.wrapper.classList.toggle("audio-only", showBadge)
+
+          renderMediaOrder()
+        }
+
+        function ensureRemoteTile(peerId) {
+          let tile = remoteTiles.get(peerId)
+          if (tile) return tile
+          const peer = getPeerState(peerId)
+
+          const wrapper = document.createElement("div")
+          wrapper.className = "video-wrapper"
+          wrapper.dataset.remotePeer = String(peerId)
+          wrapper.dataset.peerId = String(peerId)
+
+          const label = document.createElement("div")
+          label.className = "video-label"
+          label.textContent = peer?.user?.name || "Peer"
+          label.style.backgroundColor = peer?.user?.color || "#999"
+          wrapper.appendChild(label)
+
+          mediaEl.appendChild(wrapper)
+          tile = { wrapper, label, videoEl: null, audioEl: null, badgeEl: null }
+          remoteTiles.set(peerId, tile)
+          renderMediaOrder()
+          return tile
+        }
+
+        function ensureAudioBadge(tile, peerId) {
+          if (tile.badgeEl) return tile.badgeEl
+          const badge = document.createElement("div")
+          badge.className = "audio-badge"
+          badge.dataset.remotePeer = String(peerId)
+          badge.textContent = "MIC"
+          badge.style.border = `2px solid ${getPeerState(peerId)?.user?.color || "#999"}`
+          tile.wrapper.insertBefore(badge, tile.label)
+          tile.badgeEl = badge
+          return badge
+        }
+
+        function updateRemoteTileVisual(peerId) {
+          const tile = remoteTiles.get(peerId)
+          if (!tile) return
+          const peer = getPeerState(peerId)
+          const media = getPeerMedia(peerId)
+          const micOn = media.includes("collab-mic")
+          const loud = !!peer?.voice?.loud
+
+          if (peer?.user?.name) tile.label.textContent = peer.user.name
+          if (peer?.user?.color) {
+            tile.label.style.backgroundColor = peer.user.color
+            if (tile.badgeEl) tile.badgeEl.style.borderColor = peer.user.color
+          }
+
+          tile.label.classList.toggle("mic-active", micOn && loud)
+
+          const showBadge = !tile.videoEl && micOn
+          if (showBadge) {
+            ensureAudioBadge(tile, peerId)
+            tile.badgeEl?.classList.toggle("mic-active", loud)
+          } else if (tile.badgeEl) {
+            tile.badgeEl.remove()
+            tile.badgeEl = null
+          }
+          tile.wrapper.classList.toggle("audio-only", showBadge)
+        }
+
+        function removeRemoteMedia(peerId) {
+          const tile = remoteTiles.get(peerId)
+          if (!tile) return
+          tile.audioEl?.pause?.()
+          tile.wrapper.remove()
+          remoteTiles.delete(peerId)
+        }
+
+        function mediaSend(msg) {
+          if (mediaWs?.readyState === 1) mediaWs.send(JSON.stringify({ type: "publish", topic: location.host + "-media", ...msg, from: ydoc.clientID }))
+        }
+
+        function connectMediaWs() {
+          const topic = location.host + "-media"
+          if (mediaWs && mediaWs.readyState <= 1) return
+          mediaWs = new WebSocket("wss://relay.vbrajon.workers.dev/signal")
+          mediaWs.onopen = () => {
+            mediaWs.send(JSON.stringify({ type: "subscribe", topics: [topic] }))
+            console.log("[media] signaling connected, topic:", topic)
+            announceMedia()
+          }
+          mediaWs.onmessage = async (e) => {
+            try {
+              const msg = JSON.parse(e.data)
+              if (msg.type === "pong") return
+              if (msg.topic !== topic || msg.from === ydoc?.clientID) return
+              if (msg.action === "media-close") {
+                const pc = mediaConns.get(msg.from)
+                if (pc) {
+                  pc.close()
+                  mediaConns.delete(msg.from)
+                }
+                removeRemoteMedia(msg.from)
+              }
+              if (msg.action === "media-announce") {
+                console.log("[media] announce from", msg.from, msg.media)
+                if (!mediaConns.has(msg.from)) {
+                  if (ydoc.clientID > msg.from) {
+                    const pc = createPC(msg.from, msg.media || [])
+                    const offer = await pc.createOffer()
+                    await pc.setLocalDescription(offer)
+                    mediaSend({ action: "media-offer", to: msg.from, sdp: offer.sdp })
+                  }
+                  mediaSend({ action: "media-announce", media: Object.keys(mediaStreams) })
+                }
+                updateRemoteTileVisual(msg.from)
+              }
+              if (msg.action === "media-offer" && msg.to === ydoc?.clientID) {
+                const pc = mediaConns.get(msg.from) || createPC(msg.from)
+                await pc.setRemoteDescription({ type: "offer", sdp: msg.sdp })
+                const answer = await pc.createAnswer()
+                await pc.setLocalDescription(answer)
+                mediaSend({ action: "media-answer", to: msg.from, sdp: answer.sdp })
+              }
+              if (msg.action === "media-answer" && msg.to === ydoc?.clientID) {
+                const pc = mediaConns.get(msg.from)
+                if (pc) await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp })
+              }
+              if (msg.action === "media-ice" && msg.to === ydoc?.clientID) {
+                const pc = mediaConns.get(msg.from)
+                if (pc && msg.candidate) await pc.addIceCandidate(msg.candidate).catch(() => {})
+              }
+            } catch (err) {
+              console.warn("[media] signal error:", err)
+            }
+          }
+          mediaWs.onclose = () => {
+            mediaWs = null
+            if (!mediaWsIntentionallyClosed) setTimeout(connectMediaWs, 2000)
+          }
+          mediaWs.onerror = () => {}
+        }
+
+        async function initMedia() {
+          mediaWsIntentionallyClosed = false
+          try {
+            const r = await fetch("https://relay.vbrajon.workers.dev/signal/ice")
+            const d = await r.json()
+            if (d.iceServers) iceServers = d.iceServers
+          } catch {
+            console.log("[media] ICE fetch failed, using STUN fallback")
+          }
+          connectMediaWs()
+          mediaPingInterval = setInterval(() => {
+            if (mediaWs?.readyState === 1) mediaWs.send(JSON.stringify({ type: "ping" }))
+          }, 25000)
+        }
+
+        function announceMedia() {
+          if (!ydoc) return
+          const activeMedia = Object.keys(mediaStreams)
+          awareness?.setLocalStateField("media", activeMedia)
+          if (!activeMedia.length) return
+          mediaWsIntentionallyClosed = false
+          if (!mediaWs || mediaWs.readyState !== 1) {
+            connectMediaWs()
+            return
+          }
+          mediaSend({ action: "media-announce", media: activeMedia })
+        }
+
+        function createPC(peerId, remoteMedia = []) {
+          if (mediaConns.has(peerId)) {
+            mediaConns.get(peerId).close()
+            removeRemoteMedia(peerId)
+          }
+
+          const pc = new RTCPeerConnection({ iceServers })
+          const localKinds = new Map()
+          for (const stream of Object.values(mediaStreams)) {
+            for (const track of stream.getTracks()) {
+              pc.addTrack(track, stream)
+              localKinds.set(track.kind, (localKinds.get(track.kind) || 0) + 1)
+            }
+          }
+          for (const type of remoteMedia) {
+            const kind = type === "collab-mic" ? "audio" : "video"
+            const n = localKinds.get(kind) || 0
+            if (n > 0) localKinds.set(kind, n - 1)
+            else pc.addTransceiver(kind, { direction: "recvonly" })
+          }
+
+          pc.onicecandidate = (e) => {
+            if (e.candidate) mediaSend({ action: "media-ice", to: peerId, candidate: e.candidate.toJSON() })
+          }
+
+          pc.ontrack = (e) => {
+            const stream = e.streams[0] || new MediaStream([e.track])
+            const tile = ensureRemoteTile(peerId)
+
+            if (e.track.kind === "video") {
+              if (tile.videoEl?.srcObject?.id === stream.id) return
+              if (tile.videoEl) tile.videoEl.remove()
+              const video = document.createElement("video")
+              video.dataset.remotePeer = String(peerId)
+              video.srcObject = stream
+              video.autoplay = true
+              video.muted = true
+              video.playsInline = true
+              const peerMedia = getPeerMedia(peerId)
+              if (peerMedia.includes("collab-screen") && !peerMedia.includes("collab-cam")) {
+                video.className = "screen-share"
+              } else {
+                video.onloadedmetadata = () => {
+                  if (video.videoWidth >= 1000) video.className = "screen-share"
+                }
+              }
+              tile.wrapper.insertBefore(video, tile.label)
+              tile.videoEl = video
+              video.play().catch(() => {})
+            }
+
+            if (e.track.kind === "audio") {
+              if (tile.audioEl?.srcObject?.id !== stream.id) {
+                if (tile.audioEl) tile.audioEl.remove()
+                const audio = document.createElement("audio")
+                audio.dataset.remotePeer = String(peerId)
+                audio.srcObject = stream
+                audio.autoplay = true
+                audio.playsInline = true
+                audio.style.display = "none"
+                tile.wrapper.appendChild(audio)
+                tile.audioEl = audio
+                audio.play().catch(() => {})
+              }
+            }
+
+            updateRemoteTileVisual(peerId)
+            renderMediaOrder()
+          }
+
+          pc.onconnectionstatechange = () => {
+            if (["closed", "failed", "disconnected"].includes(pc.connectionState)) {
+              mediaConns.delete(peerId)
+              removeRemoteMedia(peerId)
+            }
+          }
+
+          mediaConns.set(peerId, pc)
+          return pc
+        }
+
+        function destroyAllMediaConns() {
+          for (const [id, pc] of mediaConns) {
+            pc.close()
+            removeRemoteMedia(id)
+          }
+          mediaConns.clear()
+          clearInterval(mediaPingInterval)
+          mediaWsIntentionallyClosed = true
+          if (mediaWs) {
+            mediaWs.close()
+            mediaWs = null
+          }
+          awareness?.setLocalStateField("media", null)
+        }
+
+        let refreshTimeout
+        function refreshMediaConns() {
+          for (const [id, pc] of mediaConns) {
+            mediaSend({ action: "media-close", to: id })
+            pc.close()
+            removeRemoteMedia(id)
+          }
+          mediaConns.clear()
+          clearTimeout(refreshTimeout)
+          refreshTimeout = setTimeout(announceMedia, 300)
+        }
+
+        function stopMedia(type) {
+          if (!mediaStreams[type]) return
+          mediaStreams[type].getTracks().forEach((t) => t.stop())
+          delete mediaStreams[type]
+          if (type === "collab-mic") stopLocalVoiceMeter()
+          updateLocalTileVisual()
+          refreshMediaConns()
+        }
+
+        async function startMedia(type) {
+          try {
+            let stream
+            if (type === "collab-mic") stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            else if (type === "collab-cam") stream = await navigator.mediaDevices.getUserMedia({ video: true })
+            else if (type === "collab-screen") stream = await navigator.mediaDevices.getDisplayMedia({ video: true })
+            if (!stream) return
+
+            mediaStreams[type] = stream
+            if (type === "collab-mic") startLocalVoiceMeter(stream)
+            updateLocalTileVisual()
+
+            stream.getTracks().forEach((t) => {
+              t.onended = () => {
+                stopMedia(type)
+                document.body.classList.remove(type)
+              }
+            })
+
+            refreshMediaConns()
+          } catch (e) {
+            console.warn(`[collab] ${type} failed:`, e.message)
+            document.body.classList.remove(type)
+          }
+        }
+
         editor.addEventListener("input", syncToY)
-        setup()
+        if (document.body.classList.contains("collab")) setup()
+        new MutationObserver(() => {
+          const on = document.body.classList.contains("collab")
+          if (on && !ready) setup()
+          if (!on && ready) teardown()
+          for (const type of ["collab-mic", "collab-cam", "collab-screen"]) {
+            const active = document.body.classList.contains(type)
+            if (active && !mediaStreams[type] && on) startMedia(type)
+            if (!active && mediaStreams[type]) stopMedia(type)
+            if (active && !on) {
+              stopMedia(type)
+              document.body.classList.remove(type)
+            }
+          }
+        }).observe(document.body, { attributeFilter: ["class"] })
+
+        // Auto Picture-in-Picture when switching tabs
+        async function enterPiP() {
+          const video = document.querySelector(".collab-media video")
+          if (video && !document.pictureInPictureElement && document.pictureInPictureEnabled) await video.requestPictureInPicture().catch(() => {})
+        }
+        async function exitPiP() {
+          if (document.pictureInPictureElement) await document.exitPictureInPicture().catch(() => {})
+        }
+        document.addEventListener("visibilitychange", () => (document.hidden ? enterPiP() : exitPiP()))
+        document.addEventListener("keydown", (e) => {
+          if (e.shiftKey && e.code === "KeyP") {
+            e.preventDefault()
+            document.pictureInPictureElement ? exitPiP() : enterPiP()
+          }
+        })
       }
     </script>
   </body>
